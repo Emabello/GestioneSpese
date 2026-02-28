@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">Gestione Spese</string>
-    <string name="supabase_url">https://fkeihvmzcfaguvevtwlw.supabase.co</string>
-    <string name="supabase_anon_key">sb_publishable_gGF-cA5u_jeqIJOypNKtTQ_QiCRzDfl</string>
+    <string name="backend_url">https://script.google.com/macros/s/AKfycbxFS-cyDZ_z439zPhpDRyjTJdzMxxLha_gbbt5mdPeMPdRc4ZuZ6G8c5uhKacZxtbeH/</string>
+    <string name="backend_api_key">9c7f3e2a6b8d4f1c0e9a7b6d5c4f3a2b</string>
 </resources>

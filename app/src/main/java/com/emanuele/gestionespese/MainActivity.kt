@@ -15,8 +15,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val baseUrl = getString(R.string.supabase_url)
-        val apiKey = getString(R.string.supabase_anon_key)
+        val baseUrl = getString(R.string.backend_url)
+        val apiKey = getString(R.string.backend_api_key)
 
         val retrofit = RetrofitProvider.create(baseUrl, apiKey)
         val api = retrofit.create(SupabaseApi::class.java)

@@ -3,7 +3,6 @@ package com.emanuele.gestionespese.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.emanuele.gestionespese.data.model.Categoria
-import com.emanuele.gestionespese.data.model.RpcInsertSpesaRequest
 import com.emanuele.gestionespese.data.model.Sottocategoria
 import com.emanuele.gestionespese.data.model.SpesaUpsert
 import com.emanuele.gestionespese.data.model.SpesaView
@@ -192,18 +191,17 @@ class SpeseViewModel(private val repo: SpeseRepository) : ViewModel() {
                 val mese = data.substring(5, 7).toInt()
 
                 if (editingId == null) {
-                    // INSERT via RPC: ID “primo disponibile” lo assegna il DB
-                    val req = RpcInsertSpesaRequest(
+                    val payload = SpesaUpsert(
                         data = data,
-                        descrizione = descrizione,
                         importo = importo,
                         tipo = tipo,
                         mese = mese,
                         anno = anno,
+                        categoriaLinkId = linkId,
                         metodoPagamento = metodoPagamento,
-                        categoriaLinkId = linkId
+                        note = descrizione
                     )
-                    repo.addViaRpc(req)
+                    repo.add(payload)
                 } else {
                     // UPDATE classico: qui l’ID esiste già
                     val payload = SpesaUpsert(

@@ -2,107 +2,48 @@ package com.emanuele.gestionespese.data.remote
 
 import com.emanuele.gestionespese.data.model.*
 import retrofit2.Response
-import retrofit2.http.*
+import retrofit2.http.Body
+import retrofit2.http.GET
+import retrofit2.http.POST
+import retrofit2.http.Query
 
 interface SupabaseApi {
 
-    // =========================
-    // SPESE (VIEW)
-    // =========================
-
-    @GET("rest/v1/v_spese")
+    @GET("exec")
     suspend fun getSpeseView(
-        @Query("select") select: String = "*",
-        @Query("order") order: String = "data.desc"
+        @Query("resource") resource: String = "spese"
     ): List<SpesaView>
 
-
-    // =========================
-    // CATEGORIE
-    // =========================
-
-    @GET("rest/v1/cfg_categorie")
+    @GET("exec")
     suspend fun getCategorie(
-        @Query("select") select: String = "*",
-        @Query("order") order: String = "ordine.asc"
+        @Query("resource") resource: String = "categorie"
     ): List<Categoria>
 
-
-    // =========================
-    // SOTTOCATEGORIE PER CATEGORIA
-    // (via tabella ponte)
-    // =========================
-
-    @GET("rest/v1/cfg_categoria_sottocategoria")
+    @GET("exec")
     suspend fun getSottocategorieByCategoria(
-        @Query("select")
-        select: String =
-            "ordine,sottocategoria:cfg_sottocategorie(id,nome,ordine,attiva)",
-
-        @Query("categoria_id")
-        categoriaFilter: String,
-
-        @Query("attiva")
-        attiva: String = "eq.true",
-
-        @Query("order")
-        order: String = "ordine.asc"
+        @Query("resource") resource: String = "sottocategorie",
+        @Query("categoria_id") categoriaFilter: String
     ): List<LinkSottoRow>
 
-
-    // =========================
-    // RESOLVE categoria_link_id
-    // =========================
-
-    @GET("rest/v1/cfg_categoria_sottocategoria")
+    @GET("exec")
     suspend fun resolveCategoriaLinkId(
-        @Query("select")
-        select: String = "id",
-
-        @Query("categoria_id")
-        categoriaFilter: String,
-
-        @Query("sottocategoria_id")
-        sottocategoriaFilter: String,
-
-        @Query("limit")
-        limit: Int = 1
+        @Query("resource") resource: String = "categoria_link",
+        @Query("categoria_id") categoriaFilter: String,
+        @Query("sottocategoria_id") sottocategoriaFilter: String?
     ): List<LinkIdRow>
 
-
-    // =========================
-    // INSERT
-    // =========================
-
-    @POST("rest/v1/spese")
+    @POST("exec")
     suspend fun insertSpesa(
-        @Body spesa: SpesaUpsert
-    ): Response<Unit>
+        @Body spesa: SpesaUpsertRequest
+    ): Response<InsertSpesaResponse>
 
-
-    // =========================
-    // UPDATE (PATCH)
-    // =========================
-    // IMPORTANTE: usare @Query e non @Path
-
-    @PATCH("rest/v1/spese")
+    @POST("exec")
     suspend fun updateSpesa(
-        @Query("id") idFilter: String,
-        @Body spesa: SpesaUpsert
+        @Body req: UpdateSpesaRequest
     ): Response<Unit>
 
-
-    // =========================
-    // DELETE
-    // =========================
-
-    @DELETE("rest/v1/spese")
+    @POST("exec")
     suspend fun deleteSpesa(
-        @Query("id") idFilter: String
+        @Body req: DeleteSpesaRequest
     ): Response<Unit>
-
-    @POST("rest/v1/rpc/insert_spesa_first_free_id")
-    suspend fun insertSpesaFirstFreeId(
-        @Body req: RpcInsertSpesaRequest
-    ): retrofit2.Response<SpesaRow>
 }

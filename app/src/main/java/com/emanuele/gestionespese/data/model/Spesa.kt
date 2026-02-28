@@ -11,41 +11,72 @@ data class SpesaView(
     val tipo: String? = null,
     val mese: Int? = null,
     val anno: Int? = null,
-    @SerializedName("metodo_pagamento")
+    @SerializedName(value = "metodo_pagamento", alternate = ["conto", "conto_id"])
     val metodoPagamento: String? = null,
     @SerializedName("created_at")
     val createdAt: String? = null,
 
-    // nuovi campi dalla VIEW
-    @SerializedName("categoria_link_id")
+    @SerializedName(value = "categoria_link_id", alternate = ["categoria_link"])
     val categoriaLinkId: String? = null,
-    @SerializedName("categoria_id")
+    @SerializedName(value = "categoria_id", alternate = ["categoria"])
     val categoriaId: String? = null,
-    @SerializedName("sottocategoria_id")
+    @SerializedName(value = "sottocategoria_id", alternate = ["sottocategoria"])
     val sottocategoriaId: String? = null,
 
     val categoria: String? = null,
     val sottocategoria: String? = null
 )
 
-// Scrittura: su tabella spese (ID, non nomi)
+// Scrittura app (modello interno)
 data class SpesaUpsert(
     val id: Int? = null,
     val data: String,
     val importo: Double,
     val tipo: String,
-
     val mese: Int,
     val anno: Int,
-
     @SerializedName("categoria_link_id")
     val categoriaLinkId: String,
-
     @SerializedName("metodo_pagamento")
     val metodoPagamento: String,
-
     @SerializedName("descrizione")
     val note: String? = null
+)
+
+// Scrittura verso Apps Script (payload HTTP)
+data class SpesaUpsertRequest(
+    val resource: String = "spesa",
+    val id: Int? = null,
+    @SerializedName("utente_id") val utenteId: String = "2 - A.BERTOLI",
+    @SerializedName("conto_id") val contoId: String,
+    val data: String,
+    val importo: Double,
+    val tipo: String,
+    val categoria: String,
+    val sottocategoria: String,
+    val descrizione: String?
+)
+
+data class UpdateSpesaRequest(
+    val resource: String = "spesa_update",
+    val id: Int,
+    @SerializedName("conto_id") val contoId: String,
+    val data: String,
+    val importo: Double,
+    val tipo: String,
+    val categoria: String,
+    val sottocategoria: String,
+    val descrizione: String?
+)
+
+data class DeleteSpesaRequest(
+    val resource: String = "spesa_delete",
+    val id: Int
+)
+
+data class InsertSpesaResponse(
+    val id: Int? = null,
+    val ok: Boolean? = null
 )
 
 data class Categoria(
@@ -70,28 +101,4 @@ data class LinkSottoRow(
 
 data class LinkIdRow(
     val id: String
-)
-
-data class RpcInsertSpesaRequest(
-    @SerializedName("p_data") val data: String,                 // "YYYY-MM-DD"
-    @SerializedName("p_descrizione") val descrizione: String?,   // nullable
-    @SerializedName("p_importo") val importo: Double,
-    @SerializedName("p_tipo") val tipo: String,
-    @SerializedName("p_mese") val mese: Int,
-    @SerializedName("p_anno") val anno: Int,
-    @SerializedName("p_metodo_pagamento") val metodoPagamento: String,
-    @SerializedName("p_categoria_link_id") val categoriaLinkId: String // UUID string
-)
-
-// Se vuoi leggere la riga che torna dalla function (opzionale)
-data class SpesaRow(
-    val id: Int,
-    val data: String?,
-    val descrizione: String?,
-    val importo: Double?,
-    val tipo: String?,
-    val mese: Int?,
-    val anno: Int?,
-    @SerializedName("metodo_pagamento") val metodoPagamento: String?,
-    @SerializedName("categoria_link_id") val categoriaLinkId: String?
 )
