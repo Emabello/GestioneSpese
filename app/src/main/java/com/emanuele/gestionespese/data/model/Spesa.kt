@@ -2,6 +2,8 @@ package com.emanuele.gestionespese.data.model
 
 import com.google.gson.annotations.SerializedName
 
+
+
 // Lettura lista: tipicamente da v_spese (nomi già risolti)
 data class SpesaView(
     val id: Int,
@@ -83,6 +85,11 @@ data class RpcInsertSpesaRequest(
     @SerializedName("p_categoria_link_id") val categoriaLinkId: String // UUID string
 )
 
+data class LoginRequest(
+    @SerializedName("p_utente") val utente: String,                 // "YYYY-MM-DD"
+    @SerializedName("p_password") val password: String?,   // nullable
+)
+
 // Se vuoi leggere la riga che torna dalla function (opzionale)
 data class SpesaRow(
     val id: Int,
@@ -94,4 +101,14 @@ data class SpesaRow(
     val anno: Int?,
     @SerializedName("metodo_pagamento") val metodoPagamento: String?,
     @SerializedName("categoria_link_id") val categoriaLinkId: String?
+)
+
+data class LoginRow(
+    val id: Int,
+    val utente: String?,
+    val password: String?,
+    val nome: String?,
+    val cognome: String?,
+    val attivo: Boolean?,
+    val email: String?
 )
