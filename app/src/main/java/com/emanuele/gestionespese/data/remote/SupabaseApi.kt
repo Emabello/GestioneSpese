@@ -1,5 +1,6 @@
 package com.emanuele.gestionespese.data.remote
 
+import com.emanuele.gestionespese.LoginRequest
 import com.emanuele.gestionespese.data.model.*
 import retrofit2.Response
 import retrofit2.http.*
@@ -105,4 +106,9 @@ interface SupabaseApi {
     suspend fun insertSpesaFirstFreeId(
         @Body req: RpcInsertSpesaRequest
     ): retrofit2.Response<SpesaRow>
+
+    @POST("https://script.google.com/macros/s/AKfycbxFS-cyDZ_z439zPhpDRyjTJdzMxxLha_gbbt5mdPeMPdRc4ZuZ6G8c5uhKacZxtbeH/exec")
+    suspend fun login(
+        @Body req: LoginRequest
+    ): Response<LoginRow>
 }
