@@ -1,7 +1,7 @@
 package com.emanuele.gestionespese.data.repo
 
 import com.emanuele.gestionespese.data.local.SpesaDraftDao
-import com.emanuele.gestionespese.data.local.SpesaDraftEntity
+import com.emanuele.gestionespese.data.local.entities.SpesaDraftEntity
 import kotlinx.coroutines.flow.Flow
 
 class SpesaDraftRepository(

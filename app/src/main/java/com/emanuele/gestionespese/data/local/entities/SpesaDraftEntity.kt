@@ -1,4 +1,4 @@
-package com.emanuele.gestionespese.data.local
+package com.emanuele.gestionespese.data.local.entities
 
 import androidx.room.Entity
 import androidx.room.Index

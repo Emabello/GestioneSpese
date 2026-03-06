@@ -2,103 +2,139 @@ package com.emanuele.gestionespese.data.model
 
 import com.google.gson.annotations.SerializedName
 
-// Lettura lista: tipicamente da v_spese (nomi già risolti)
+data class UtcItem(
+    val utente: String,        // "1 - E.BELLOTTI"
+    val tipologia: String,     // "1 - Debiti"
+    val categoria: String,     // "5 - Finanziamento"
+    val sottocategoria: String, // "4 - Finanziamento Macchina"
+    val attivo: Boolean
+)
+// Wrapper standard: Apps Script risponde { data: ... } oppure { ok:true, data: ... }
+data class ApiEnvelope<T>(
+    val ok: Boolean? = null,
+    val data: T? = null,
+    val error: String? = null
+)
+
+/**
+ * Riga "SPESE"
+ * headers: id, utente, data, conto, importo, tipo, categoria, sottocategoria, descrizione, mese, anno, lista_conto_riga
+ */
 data class SpesaView(
     val id: Int,
+    val utente: String? = null,
     val data: String? = null,
-    val descrizione: String? = null,
+    @SerializedName("conto")
+    val conto: String? = null,
     val importo: Double = 0.0,
     val tipo: String? = null,
-    val mese: Int? = null,
-    val anno: Int? = null,
-    @SerializedName(value = "metodo_pagamento", alternate = ["conto", "conto_id"])
-    val metodoPagamento: String? = null,
-    @SerializedName("created_at")
-    val createdAt: String? = null,
-
-    @SerializedName(value = "categoria_link_id", alternate = ["categoria_link"])
-    val categoriaLinkId: String? = null,
-    @SerializedName(value = "categoria_id", alternate = ["categoria"])
-    val categoriaId: String? = null,
-    @SerializedName(value = "sottocategoria_id", alternate = ["sottocategoria"])
-    val sottocategoriaId: String? = null,
-
     val categoria: String? = null,
-    val sottocategoria: String? = null
+    val sottocategoria: String? = null,
+    val descrizione: String? = null,
+    val mese: Int? = null,
+    val anno: Int? = null
 )
 
-// Scrittura app (modello interno)
-data class SpesaUpsert(
-    val id: Int? = null,
-    val data: String,
-    val importo: Double,
-    val tipo: String,
-    val mese: Int,
-    val anno: Int,
-    @SerializedName("categoria_link_id")
-    val categoriaLinkId: String,
-    @SerializedName("metodo_pagamento")
-    val metodoPagamento: String,
-    @SerializedName("descrizione")
-    val note: String? = null
-)
-
-// Scrittura verso Apps Script (payload HTTP)
-data class SpesaUpsertRequest(
-    val resource: String = "spesa",
-    val id: Int? = null,
-    @SerializedName("utente_id") val utenteId: String = "2 - A.BERTOLI",
-    @SerializedName("conto_id") val contoId: String,
-    val data: String,
-    val importo: Double,
-    val tipo: String,
-    val categoria: String,
-    val sottocategoria: String,
-    val descrizione: String?
-)
-
-data class UpdateSpesaRequest(
-    val resource: String = "spesa_update",
+/** Riga "CATEGORIA" */
+data class CategoriaRow(
     val id: Int,
-    @SerializedName("conto_id") val contoId: String,
-    val data: String,
-    val importo: Double,
-    val tipo: String,
-    val categoria: String,
-    val sottocategoria: String,
-    val descrizione: String?
+    val descrizione: String? = null,
+    // nello script è "attiva" (header), ma alt "attivo"
+    @SerializedName(value = "attiva", alternate = ["attivo"])
+    val attiva: Any? = null
 )
 
-data class DeleteSpesaRequest(
-    val resource: String = "spesa_delete",
+/** Riga "SOTTOCATEGORIA" */
+data class SottocategoriaRow(
+    val id: Int,
+    val descrizione: String? = null,
+    // nello script è "attiva" (header), ma alt "attivo"
+    @SerializedName(value = "attiva", alternate = ["attivo"])
+    val attiva: Any? = null
+)
+
+/** Riga "UTENTE" */
+data class UtenteRow(
+    val id: Int,
+    @SerializedName(value = "utenza", alternate = ["utente"])
+    val utente: String? = null,
+    val nome: String? = null,
+    val cognome: String? = null,
+    @SerializedName(value = "attivo", alternate = ["attiva"])
+    val attivo: Any? = null,
+    val email: String? = null
+)
+
+/** Riga "TIPOLOGIA" (quello che in app chiamavi "Tipo") */
+data class TipologiaRow(
+    val id: Int,
+    val descrizione: String? = null,
+    @SerializedName(value = "attivo", alternate = ["attiva"])
+    val attivo: Any? = null
+)
+
+/** Riga "CONTO" */
+data class ContoRow(
+    val id: Int,
+    val descrizione: String? = null,
+    @SerializedName(value = "attivo", alternate = ["attiva"])
+    val attivo: Any? = null
+)
+
+/** Riga "SOTTOCATEGORIA" */
+data class SottoCategoriaRow(
+    val id: Int,
+    @SerializedName("id_categoria")
+    val idCategoria: Int,
+    val descrizione: String? = null,
+    @SerializedName(value = "attivo", alternate = ["attiva"])
+    val attivo: Any? = null
+)
+
+/** Riga "UC" (utente-conto) */
+data class UcRow(
+    val id: Int,
+    @SerializedName("id_utente")
+    val idUtente: Int,
+    @SerializedName("id_conto")
+    val idConto: Int,
+    @SerializedName(value = "attivo", alternate = ["attiva"])
+    val attivo: Any? = null
+)
+
+/** Payload per insert/update/delete secondo il tuo Apps Script */
+data class InsertRequest<T>(
+    val resource: String,
+    val utente: String,
+    val data: T
+)
+
+data class UpdateRequest<T>(
+    val resource: String,
+    val op: String = "update",
+    val id: Int,
+    val data: T
+)
+
+data class DeleteRequest(
+    val resource: String,
+    val op: String = "delete",
     val id: Int
 )
 
-data class InsertSpesaResponse(
-    val id: Int? = null,
-    val ok: Boolean? = null
+/** Campi scrivibili su SPESE */
+data class SpesaPatch(
+    val utente: String? = null,
+    val data: String? = null,
+    val conto: String? = null,
+    val importo: Double? = null,
+    val tipo: String? = null,
+    val categoria: String? = null,
+    val sottocategoria: String? = null,
+    val descrizione: String? = null
 )
 
-data class Categoria(
-    val id: String,
-    val nome: String,
-    val ordine: Int? = null,
-    val attiva: Boolean? = null
-)
-
-data class Sottocategoria(
-    val id: String,
-    val nome: String,
-    val ordine: Int? = null,
-    val attiva: Boolean? = null
-)
-
-data class LinkSottoRow(
-    val ordine: Int? = null,
-    @SerializedName("sottocategoria")
-    val sottocategoria: Sottocategoria? = null
-)
-
-data class LinkIdRow(
-    val id: String
+data class SottoCatItem(
+    val categoria: String,      // qui ci mettiamo l’ID categoria (es. "1")
+    val sottocategoria: String  // descrizione sottocategoria
 )
