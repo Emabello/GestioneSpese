@@ -1,5 +1,6 @@
 package com.emanuele.gestionespese.data.remote
 
+import com.emanuele.gestionespese.LoginRequest
 import com.emanuele.gestionespese.data.model.*
 import retrofit2.http.GET
 import retrofit2.http.POST

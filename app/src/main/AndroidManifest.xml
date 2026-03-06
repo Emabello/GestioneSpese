@@ -13,15 +13,20 @@
         android:theme="@style/Theme.GestioneSpese"
         android:name=".MyApp">
         <activity
-            android:name=".MainActivity"
+            android:name=".StartActivity"
             android:exported="true"
             android:theme="@style/Theme.GestioneSpese">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".LoginActivity"
+            android:exported="false"/>
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"/>
         <service
             android:name=".notifications.BankNotificationListener"
             android:label="Gestione Spese Notification Listener"

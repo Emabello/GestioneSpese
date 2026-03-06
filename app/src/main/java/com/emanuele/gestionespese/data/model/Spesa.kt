@@ -20,6 +20,9 @@ data class ApiEnvelope<T>(
  * Riga "SPESE"
  * headers: id, utente, data, conto, importo, tipo, categoria, sottocategoria, descrizione, mese, anno, lista_conto_riga
  */
+
+
+// Lettura lista: tipicamente da v_spese (nomi già risolti)
 data class SpesaView(
     val id: Int,
     val utente: String? = null,
@@ -137,4 +140,30 @@ data class SpesaPatch(
 data class SottoCatItem(
     val categoria: String,      // qui ci mettiamo l’ID categoria (es. "1")
     val sottocategoria: String  // descrizione sottocategoria
+data class LoginRequest(
+    @SerializedName("p_utente") val utente: String,                 // "YYYY-MM-DD"
+    @SerializedName("p_password") val password: String?,   // nullable
+)
+
+// Se vuoi leggere la riga che torna dalla function (opzionale)
+data class SpesaRow(
+    val id: Int,
+    val data: String?,
+    val descrizione: String?,
+    val importo: Double?,
+    val tipo: String?,
+    val mese: Int?,
+    val anno: Int?,
+    @SerializedName("metodo_pagamento") val metodoPagamento: String?,
+    @SerializedName("categoria_link_id") val categoriaLinkId: String?
+)
+
+data class LoginRow(
+    val id: Int,
+    val utente: String?,
+    val password: String?,
+    val nome: String?,
+    val cognome: String?,
+    val attivo: Boolean?,
+    val email: String?
 )
