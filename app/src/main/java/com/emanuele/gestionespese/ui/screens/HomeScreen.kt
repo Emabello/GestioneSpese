@@ -45,7 +45,14 @@ fun HomeScreen(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) { vm.refresh() }
+    // ✅ REFRESH SOLO 1 VOLTA (evita chiamata quando torni dal dettaglio)
+    var didTriggerRefresh by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!didTriggerRefresh) {
+            didTriggerRefresh = true
+            vm.refresh()
+        }
+    }
 
     val f = state.filters
     val filtered = remember(state.spese, f) {
@@ -56,7 +63,7 @@ fun HomeScreen(
                 .joinToString(" ")
                 .lowercase(Locale.getDefault())
 
-            val metodoSafe = s.metodoPagamento.orEmpty()
+            val metodoSafe = s.conto.orEmpty()
             val tipoSafe = s.tipo.orEmpty()
             val dataSafe = s.data.orEmpty()
             val noteSafe = s.descrizione.orEmpty()
@@ -84,17 +91,14 @@ fun HomeScreen(
     val listState = rememberLazyListState()
 
     // FAB sinistro: visibile solo quando scrolli + direzione
-    var showJumpFab by remember { mutableStateOf(false) }
     var scrollDirDown by remember { mutableStateOf(true) } // true=↓, false=↑
 
-    // Mostra il FAB solo durante lo scroll e per ~700ms dopo l’ultimo movimento
     val isScrolling by remember {
         derivedStateOf { listState.isScrollInProgress }
     }
 
     var lastIndex by remember { mutableStateOf(0) }
     var lastOffset by remember { mutableStateOf(0) }
-    //var scrollDirDown by remember { mutableStateOf(true) }
 
     LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
         val index = listState.firstVisibleItemIndex
@@ -122,18 +126,21 @@ fun HomeScreen(
                         Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Riepilogo")
                     }
 
-                    IconButton(onClick = onDrafts) {   // 👈 NUOVO
+                    IconButton(onClick = onDrafts) {
                         Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Draft")
                     }
 
-                    IconButton(onClick = { vm.refresh() }) {
+                    IconButton(onClick = {
+                        // ✅ refresh manuale: forza chiamata
+                        didTriggerRefresh = true
+                        vm.refresh()
+                    }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Aggiorna")
                     }
                 }
             )
         },
         floatingActionButton = {
-            // Due FAB: sinistro (salta su/giù) + destro (add)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -177,7 +184,7 @@ fun HomeScreen(
 
         val metodi = remember(state.spese) {
             state.spese
-                .mapNotNull { it.metodoPagamento?.takeIf { m -> m.isNotBlank() } }
+                .mapNotNull { it.conto?.takeIf { m -> m.isNotBlank() } }
                 .distinct()
                 .sorted()
         }
@@ -212,7 +219,6 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Chip attivo: Mese
                 f.mese?.let { ym ->
                     InputChip(
                         selected = true,
@@ -226,7 +232,6 @@ fun HomeScreen(
                     )
                 }
 
-                // Chip attivo: Tipo
                 f.tipo?.let { t ->
                     InputChip(
                         selected = true,
@@ -240,7 +245,6 @@ fun HomeScreen(
                     )
                 }
 
-                // Chip attivo: Metodo
                 f.metodo?.let { m ->
                     InputChip(
                         selected = true,
@@ -328,7 +332,6 @@ fun HomeScreen(
                 ) {
                     Text("Filtri", style = MaterialTheme.typography.titleLarge)
 
-                    // --- Mese ---
                     Text("Mese", style = MaterialTheme.typography.titleMedium)
                     Row(
                         modifier = Modifier
@@ -349,7 +352,6 @@ fun HomeScreen(
                         }
                     }
 
-                    // --- Tipo ---
                     Text("Tipo", style = MaterialTheme.typography.titleMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
@@ -369,7 +371,6 @@ fun HomeScreen(
                         )
                     }
 
-                    // --- Metodo ---
                     Text("Metodo", style = MaterialTheme.typography.titleMedium)
                     Row(
                         modifier = Modifier
@@ -418,10 +419,14 @@ private fun SpesaCard(
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val tipoSafe = spesa.tipo.orEmpty()
-    val metodoSafe = spesa.metodoPagamento.orEmpty().ifBlank { "Metodo n/d" }
-    val dataSafe = spesa.data.orEmpty().ifBlank { "Data n/d" }
-    val isEntrata = tipoSafe.equals("entrata", ignoreCase = true)
+    val tipoSafe = spesa.tipo.orEmpty().ifBlank { "n/d" }
+    val metodoSafe = spesa.conto.orEmpty().ifBlank { "n/d" }
+    val dataSafe = spesa.data.orEmpty().ifBlank { "n/d" }
+
+    val isEntrata = tipoSafe.equals("2 - Reddito", ignoreCase = true)
+
+    val categoriaSafe = spesa.categoria.orEmpty().ifBlank { "n/d" }
+    val sottoSafe = spesa.sottocategoria.orEmpty().ifBlank { "n/d" }
 
     val categoriaLabel = remember(spesa.categoria, spesa.sottocategoria) {
         listOfNotNull(spesa.categoria, spesa.sottocategoria)
@@ -456,7 +461,7 @@ private fun SpesaCard(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AssistChip(
                             onClick = { },
-                            label = { Text(if (isEntrata) "Entrata" else "Uscita") },
+                            label = { Text(tipoSafe) },
                             colors = AssistChipDefaults.assistChipColors(
                                 containerColor = MaterialTheme.colorScheme.surface,
                                 labelColor = MaterialTheme.colorScheme.onSurface
@@ -488,6 +493,18 @@ private fun SpesaCard(
                 }
             }
 
+            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Categoria: $categoriaSafe",
+                style = MaterialTheme.typography.labelMedium,
+                color = onContainer.copy(alpha = 0.85f)
+            )
+            Text(
+                text = "Sottocategoria: $sottoSafe",
+                style = MaterialTheme.typography.labelMedium,
+                color = onContainer.copy(alpha = 0.85f)
+            )
             spesa.descrizione?.takeIf { it.isNotBlank() }?.let {
                 Spacer(Modifier.height(10.dp))
                 Text(

@@ -3,7 +3,7 @@ package com.emanuele.gestionespese.notifications
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
-import com.emanuele.gestionespese.data.local.SpesaDraftEntity
+import com.emanuele.gestionespese.data.local.entities.SpesaDraftEntity
 import com.emanuele.gestionespese.di.ServiceLocator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

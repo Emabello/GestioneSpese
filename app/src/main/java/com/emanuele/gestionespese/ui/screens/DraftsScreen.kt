@@ -44,7 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.emanuele.gestionespese.data.local.SpesaDraftEntity
+import com.emanuele.gestionespese.data.local.entities.SpesaDraftEntity
 import com.emanuele.gestionespese.ui.drafts.DraftsViewModel
 import com.emanuele.gestionespese.ui.theme.ExpenseContainer
 import com.emanuele.gestionespese.ui.theme.OnExpense

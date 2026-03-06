@@ -2,113 +2,64 @@ package com.emanuele.gestionespese.data.remote
 
 import com.emanuele.gestionespese.LoginRequest
 import com.emanuele.gestionespese.data.model.*
-import retrofit2.Response
-import retrofit2.http.*
+import retrofit2.http.GET
+import retrofit2.http.POST
+import retrofit2.http.Body
+import retrofit2.http.Query
 
 interface SupabaseApi {
 
-    // =========================
-    // SPESE (VIEW)
-    // =========================
+    @GET("exec")
+    suspend fun getSpese(
+        @Query("resource") resource: String = "spese",
+        @Query("utente") utente: String
+    ): ApiEnvelope<List<SpesaView>>
 
-    @GET("rest/v1/v_spese")
-    suspend fun getSpeseView(
-        @Query("select") select: String = "*",
-        @Query("order") order: String = "data.desc"
-    ): List<SpesaView>
-
-
-    // =========================
-    // CATEGORIE
-    // =========================
-
-    @GET("rest/v1/cfg_categorie")
+    @GET("exec")
     suspend fun getCategorie(
-        @Query("select") select: String = "*",
-        @Query("order") order: String = "ordine.asc"
-    ): List<Categoria>
+        @Query("resource") resource: String = "categoria"
+    ): ApiEnvelope<List<CategoriaRow>>
 
+    @GET("exec")
+    suspend fun getSottoCategorie(
+        @Query("resource") resource: String = "sottocategoria"
+    ): ApiEnvelope<List<SottocategoriaRow>>
 
-    // =========================
-    // SOTTOCATEGORIE PER CATEGORIA
-    // (via tabella ponte)
-    // =========================
+    // ✅ Lookups generici come Map per non dipendere dai campi
+    @GET("exec")
+    suspend fun getTipi(
+        @Query("resource") resource: String = "tipologia"
+    ): ApiEnvelope<List<Map<String, Any?>>>
 
-    @GET("rest/v1/cfg_categoria_sottocategoria")
-    suspend fun getSottocategorieByCategoria(
-        @Query("select")
-        select: String =
-            "ordine,sottocategoria:cfg_sottocategorie(id,nome,ordine,attiva)",
+    @GET("exec")
+    suspend fun getSottocategorie(
+        @Query("resource") resource: String = "sottocategoria"
+    ): ApiEnvelope<List<Map<String, Any?>>>
 
-        @Query("categoria_id")
-        categoriaFilter: String,
+    @GET("exec")
+    suspend fun getConti(
+        @Query("resource") resource: String = "conto",
+        @Query("utente") utente: String? = null
+    ): ApiEnvelope<List<Map<String, Any?>>>
 
-        @Query("attiva")
-        attiva: String = "eq.true",
-
-        @Query("order")
-        order: String = "ordine.asc"
-    ): List<LinkSottoRow>
-
-
-    // =========================
-    // RESOLVE categoria_link_id
-    // =========================
-
-    @GET("rest/v1/cfg_categoria_sottocategoria")
-    suspend fun resolveCategoriaLinkId(
-        @Query("select")
-        select: String = "id",
-
-        @Query("categoria_id")
-        categoriaFilter: String,
-
-        @Query("sottocategoria_id")
-        sottocategoriaFilter: String,
-
-        @Query("limit")
-        limit: Int = 1
-    ): List<LinkIdRow>
-
-
-    // =========================
-    // INSERT
-    // =========================
-
-    @POST("rest/v1/spese")
-    suspend fun insertSpesa(
-        @Body spesa: SpesaUpsert
-    ): Response<Unit>
-
-
-    // =========================
-    // UPDATE (PATCH)
-    // =========================
-    // IMPORTANTE: usare @Query e non @Path
-
-    @PATCH("rest/v1/spese")
-    suspend fun updateSpesa(
-        @Query("id") idFilter: String,
-        @Body spesa: SpesaUpsert
-    ): Response<Unit>
-
-
-    // =========================
-    // DELETE
-    // =========================
-
-    @DELETE("rest/v1/spese")
-    suspend fun deleteSpesa(
-        @Query("id") idFilter: String
-    ): Response<Unit>
-
-    @POST("rest/v1/rpc/insert_spesa_first_free_id")
-    suspend fun insertSpesaFirstFreeId(
-        @Body req: RpcInsertSpesaRequest
-    ): retrofit2.Response<SpesaRow>
-
-    @POST("https://script.google.com/macros/s/AKfycbxFS-cyDZ_z439zPhpDRyjTJdzMxxLha_gbbt5mdPeMPdRc4ZuZ6G8c5uhKacZxtbeH/exec")
+    @GET("exec")
     suspend fun login(
-        @Body req: LoginRequest
-    ): Response<LoginRow>
+        @Query("resource") resource: String = "utente",
+        @Query("user") user: String,
+        @Query("password") password: String
+    ): ApiEnvelope<UtenteRow?>
+
+    @GET("exec")
+    suspend fun getUtcs(
+        @Query("resource") resource: String = "UTCS"
+    ): ApiEnvelope<List<Map<String, Any?>>>
+
+    @POST("exec")
+    suspend fun insertSpesa(@Body req: InsertRequest<SpesaPatch>): ApiEnvelope<Map<String, Any?>>
+
+    @POST("exec")
+    suspend fun updateSpesa(@Body req: UpdateRequest<SpesaPatch>): ApiEnvelope<Map<String, Any?>>
+
+    @POST("exec")
+    suspend fun deleteSpesa(@Body req: DeleteRequest): ApiEnvelope<Map<String, Any?>>
 }

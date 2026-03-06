@@ -2,7 +2,7 @@ package com.emanuele.gestionespese.ui.drafts
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.emanuele.gestionespese.data.local.SpesaDraftEntity
+import com.emanuele.gestionespese.data.local.entities.SpesaDraftEntity
 import com.emanuele.gestionespese.data.repo.SpesaDraftRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
