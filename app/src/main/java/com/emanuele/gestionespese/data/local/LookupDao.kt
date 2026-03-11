@@ -1,17 +1,12 @@
 package com.emanuele.gestionespese.data.local
 
 import androidx.room.*
-import com.emanuele.gestionespese.data.local.entities.CategoriaEntity
-import com.emanuele.gestionespese.data.local.entities.ContoEntity
-import com.emanuele.gestionespese.data.local.entities.SottoCatPair
-import com.emanuele.gestionespese.data.local.entities.SottoCategoriaEntity
-import com.emanuele.gestionespese.data.local.entities.TipoEntity
-import com.emanuele.gestionespese.data.local.entities.UtcEntity
+import com.emanuele.gestionespese.data.local.entities.*
 
 @Dao
 interface LookupDao {
 
-    // TIPI
+    // --- Tipi ---
     @Query("SELECT value FROM lk_tipi ORDER BY value")
     suspend fun getTipi(): List<String>
 
@@ -21,8 +16,7 @@ interface LookupDao {
     @Query("DELETE FROM lk_tipi")
     suspend fun clearTipi()
 
-
-    // CATEGORIE
+    // --- Categorie ---
     @Query("SELECT value FROM lk_categorie ORDER BY value")
     suspend fun getCategorie(): List<String>
 
@@ -32,8 +26,7 @@ interface LookupDao {
     @Query("DELETE FROM lk_categorie")
     suspend fun clearCategorie()
 
-
-    // CONTI
+    // --- Conti ---
     @Query("SELECT value FROM lk_conti WHERE utenteId = :utenteId ORDER BY value")
     suspend fun getConti(utenteId: String): List<String>
 
@@ -43,8 +36,7 @@ interface LookupDao {
     @Query("DELETE FROM lk_conti")
     suspend fun clearConti()
 
-
-    // SOTTOCATEGORIE
+    // --- Sottocategorie ---
     @Query("SELECT categoria, sottocategoria FROM lk_sottocategorie ORDER BY categoria, sottocategoria")
     suspend fun getSottocategoriePairs(): List<SottoCatPair>
 
@@ -57,14 +49,13 @@ interface LookupDao {
     @Query("DELETE FROM lk_sottocategorie")
     suspend fun clearSottocategorie()
 
-    // UTCS
+    // --- UTCs ---
     @Query("SELECT * FROM UTC_ENTITY")
     suspend fun getUtcs(): List<UtcEntity>
 
-    @Query("DELETE FROM UTC_ENTITY")
-    suspend fun clearUtcs()
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertUtcs(items: List<UtcEntity>)
-}
 
+    @Query("DELETE FROM UTC_ENTITY")
+    suspend fun clearUtcs()
+}

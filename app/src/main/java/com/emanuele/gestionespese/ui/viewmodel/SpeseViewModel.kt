@@ -10,77 +10,35 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-data class SpeseFilters(
-    val query: String = "",
-    val mese: String? = null,
-    val tipo: String? = null,
-    val metodo: String? = null
-)
-
-enum class FilterKey { MESE, TIPO, METODO, QUERY }
-
-data class SpeseUiState(
-    val didLoadSpese: Boolean = false,
-    val didLoadLookups: Boolean = false,
-    val loading: Boolean = false,
-    val loadingLookups: Boolean = false,
-    val saving: Boolean = false,
-    val saveOkTick: Long = 0L,
-    val draftPrefillTick: Long = 0L,
-    val error: String? = null,
-
-    val spese: List<SpesaView> = emptyList(),
-    val utcs: List<UtcItem> = emptyList(),
-
-    // filter
-    val filters: SpeseFilters = SpeseFilters(),
-
-    // ✅ LOOKUPS
-    val tipi: List<String> = emptyList(),
-    val categorie: List<String> = emptyList(),
-    val sottocategorie: List<SottoCatItem> = emptyList(),
-    val conti: List<String> = emptyList(),
-
-    // draft
-    val draftImporto: Double? = null,
-    val draftDescrizione: String? = null,
-    val draftData: String? = null,
-    val draftMetodo: String? = null
-)
-
-class SpeseViewModel(private val repo: SpeseRepository) : ViewModel() {
+class SpeseViewModel(private val repo: SpeseRepository, private val currentUtente: String  ) : ViewModel() {
 
     private val _state = MutableStateFlow(SpeseUiState())
+
     val state: StateFlow<SpeseUiState> = _state
 
-    private val CURRENT_UTENTE = "2 - A.BERTOLI"
+    fun clearError() = _state.update { it.copy(error = null) }
 
-    fun clearError() {
-        _state.value = _state.value.copy(error = null)
-    }
-
-    fun consumeSaveOk() {
-        _state.value = _state.value.copy(saveOkTick = 0L)
-    }
+    fun consumeSaveOk() = _state.update { it.copy(saveOkTick = 0L) }
 
     fun prefillFromDraft(importo: Double, descrizione: String, dataMillis: Long, metodo: String) {
-        val formattedDate = java.text.SimpleDateFormat(
-            "yyyy-MM-dd",
-            java.util.Locale.getDefault()
-        ).format(java.util.Date(dataMillis))
-
-        _state.value = _state.value.copy(
-            draftImporto = importo,
-            draftDescrizione = descrizione,
-            draftData = formattedDate,
-            draftMetodo = metodo,
-            draftPrefillTick = System.currentTimeMillis()
-        )
+        val formattedDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(dataMillis))
+        _state.update {
+            it.copy(
+                draftImporto = importo,
+                draftDescrizione = descrizione,
+                draftData = formattedDate,
+                draftMetodo = metodo,
+                draftPrefillTick = System.currentTimeMillis()
+            )
+        }
     }
 
-    fun clearDraftPrefill() {
-        _state.value = _state.value.copy(
+    fun clearDraftPrefill() = _state.update {
+        it.copy(
             draftImporto = null,
             draftDescrizione = null,
             draftData = null,
@@ -89,62 +47,50 @@ class SpeseViewModel(private val repo: SpeseRepository) : ViewModel() {
         )
     }
 
-    fun setQuery(q: String) {
-        _state.value = _state.value.copy(filters = _state.value.filters.copy(query = q))
-    }
+    // --- Filtri ---
 
-    fun setMese(m: String?) {
-        _state.value = _state.value.copy(filters = _state.value.filters.copy(mese = m))
-    }
+    fun setQuery(q: String) = _state.update { it.copy(filters = it.filters.copy(query = q)) }
+    fun setMese(m: String?) = _state.update { it.copy(filters = it.filters.copy(mese = m)) }
+    fun setTipo(t: String?) = _state.update { it.copy(filters = it.filters.copy(tipo = t)) }
+    fun setMetodo(m: String?) = _state.update { it.copy(filters = it.filters.copy(metodo = m)) }
 
-    fun setTipo(t: String?) {
-        _state.value = _state.value.copy(filters = _state.value.filters.copy(tipo = t))
-    }
-
-    fun setMetodo(m: String?) {
-        _state.value = _state.value.copy(filters = _state.value.filters.copy(metodo = m))
-    }
-
-    fun clearFilter(key: FilterKey) {
-        val f = _state.value.filters
-        _state.value = _state.value.copy(
+    fun clearFilter(key: FilterKey) = _state.update {
+        it.copy(
             filters = when (key) {
-                FilterKey.MESE -> f.copy(mese = null)
-                FilterKey.TIPO -> f.copy(tipo = null)
-                FilterKey.METODO -> f.copy(metodo = null)
-                FilterKey.QUERY -> f.copy(query = "")
+                FilterKey.MESE -> it.filters.copy(mese = null)
+                FilterKey.TIPO -> it.filters.copy(tipo = null)
+                FilterKey.METODO -> it.filters.copy(metodo = null)
+                FilterKey.QUERY -> it.filters.copy(query = "")
             }
         )
     }
 
-    fun resetFilters() {
-        _state.value = _state.value.copy(filters = SpeseFilters())
-    }
+    fun resetFilters() = _state.update { it.copy(filters = SpeseFilters()) }
+
+    // --- Spese ---
 
     fun refresh() {
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            runCatching { repo.list(CURRENT_UTENTE) }
+            _state.update { it.copy(loading = true, error = null) }
+            runCatching { repo.list(currentUtente) }
                 .onSuccess { list ->
-                    _state.value = _state.value.copy(
-                        loading = false,
-                        spese = list,
-                        didLoadSpese = true
-                    )
+                    _state.update { it.copy(loading = false, spese = list, didLoadSpese = true) }
                 }
                 .onFailure { e ->
-                    _state.value = _state.value.copy(loading = false, error = e.message)
+                    _state.update { it.copy(loading = false, error = e.message) }
                 }
         }
     }
 
     fun refreshIfNeeded(force: Boolean = false) {
         val st = _state.value
-        if (force || (!st.didLoadSpese && !st.loading)) {
-            refresh()
-        }
+        if (force || (!st.didLoadSpese && !st.loading)) refresh()
     }
 
+    /**
+     * Salva o aggiorna una spesa.
+     * @param editingId null oppure -1 = nuova spesa; qualsiasi altro valore = modifica esistente
+     */
     fun saveSpesa(
         editingId: Int?,
         data: String,
@@ -156,14 +102,12 @@ class SpeseViewModel(private val repo: SpeseRepository) : ViewModel() {
         sottocategoria: String?
     ) {
         viewModelScope.launch {
-            _state.value = _state.value.copy(saving = true, error = null)
-
+            _state.update { it.copy(saving = true, error = null) }
             runCatching {
-                val utente = CURRENT_UTENTE
-
-                if (editingId == null) {
+                val isNew = editingId == null || editingId == -1
+                if (isNew) {
                     repo.add(
-                        utente = utente,
+                        utente = currentUtente,
                         data = data,
                         conto = conto,
                         importo = importo,
@@ -175,7 +119,7 @@ class SpeseViewModel(private val repo: SpeseRepository) : ViewModel() {
                 } else {
                     repo.update(
                         id = editingId,
-                        utente = utente,
+                        utente = currentUtente,
                         data = data,
                         conto = conto,
                         importo = importo,
@@ -185,66 +129,37 @@ class SpeseViewModel(private val repo: SpeseRepository) : ViewModel() {
                         descrizione = descrizione
                     )
                 }
-
-                repo.list(utente)
+                repo.list(currentUtente)
             }.onSuccess { newList ->
-                _state.value = _state.value.copy(
-                    saving = false,
-                    spese = newList,
-                    saveOkTick = System.currentTimeMillis(),
-                    didLoadSpese = true
-                )
+                _state.update {
+                    it.copy(
+                        saving = false,
+                        spese = newList,
+                        saveOkTick = System.currentTimeMillis(),
+                        didLoadSpese = true
+                    )
+                }
             }.onFailure { e ->
-                _state.value = _state.value.copy(
-                    saving = false,
-                    error = e.message
-                )
+                _state.update { it.copy(saving = false, error = e.message) }
             }
         }
     }
 
-    fun delete(id: Int) {
-        viewModelScope.launch {
-            runCatching {
-                repo.delete(id)
-                repo.list(CURRENT_UTENTE)
-            }.onSuccess { newList ->
-                _state.value = _state.value.copy(
-                    spese = newList,
-                    didLoadSpese = true
-                )
-            }.onFailure { e ->
-                _state.value = _state.value.copy(error = e.message)
-            }
-        }
-    }
-
-    /**
-     * ✅ LOOKUPS + UTCS: DB-first
-     * - legge Room
-     * - se mancano dati → chiama remoto e salva su Room
-     * - rilegge Room e aggiorna UI
-     */
     fun loadLookupsIfNeeded(force: Boolean = false) {
         val st = _state.value
-        if (force || (!st.didLoadLookups && !st.loadingLookups)) {
-            loadLookups()
-        }
+        if (force || (!st.didLoadLookups && !st.loadingLookups)) loadLookups()
     }
 
     fun loadLookups() = viewModelScope.launch {
         _state.update { it.copy(loadingLookups = true, error = null) }
-
         try {
-            // ✅ 1) Room first (veloce)
-            val local = repo.getLookupsFromDb(utenteId = CURRENT_UTENTE)
+            val local = repo.getLookupsFromDb(utenteId = currentUtente)
             val utcsLocal = repo.getUtcsFromDb()
 
-            val hasLocal =
-                local.tipi.isNotEmpty() &&
-                        local.categorie.isNotEmpty() &&
-                        local.conti.isNotEmpty() &&
-                        utcsLocal.isNotEmpty() // UTCS è fondamentale per filtri tipo/categoria/sottocategoria
+            val hasLocal = local.tipi.isNotEmpty()
+                    && local.categorie.isNotEmpty()
+                    && local.conti.isNotEmpty()
+                    && utcsLocal.isNotEmpty()
 
             if (hasLocal) {
                 _state.update {
@@ -260,12 +175,10 @@ class SpeseViewModel(private val repo: SpeseRepository) : ViewModel() {
                 return@launch
             }
 
-            // ✅ 2) se Room è vuoto → remoto + save su Room
-            repo.refreshLookupsFromRemoteAndSave(utenteId = CURRENT_UTENTE)
-            repo.refreshUtcsFromRemoteAndSave()
+            // Room vuoto → sync remoto (include anche UTCs)
+            repo.refreshLookupsFromRemoteAndSave(utenteId = currentUtente)
 
-            // ✅ 3) rileggi Room e aggiorna state
-            val local2 = repo.getLookupsFromDb(utenteId = CURRENT_UTENTE)
+            val local2 = repo.getLookupsFromDb(utenteId = currentUtente)
             val utcsLocal2 = repo.getUtcsFromDb()
 
             _state.update {
@@ -279,9 +192,90 @@ class SpeseViewModel(private val repo: SpeseRepository) : ViewModel() {
                 )
             }
         } catch (e: Exception) {
-            _state.update { it.copy(error = e.message ?: "Errore lookup") }
+            _state.update { it.copy(error = e.message ?: "Errore caricamento lookup") }
         } finally {
             _state.update { it.copy(loadingLookups = false) }
         }
     }
+
+    fun delete(id: Int) {
+        viewModelScope.launch {
+            runCatching { repo.delete(id = id, utente = currentUtente) }
+                .onSuccess {
+                    _state.update { it.copy(spese = it.spese.filter { s -> s.id != id }) }
+                }
+                .onFailure { e ->
+                    _state.update { it.copy(error = e.message) }
+                }
+        }
+    }
+
+    fun syncAll() {
+        viewModelScope.launch {
+            _state.update { it.copy(loading = true, loadingLookups = true, error = null, syncDone = false) }
+            runCatching { repo.syncAll(currentUtente) }
+                .onSuccess {
+                    val spese = repo.list(currentUtente)
+                    val local = repo.getLookupsFromDb(utenteId = currentUtente)
+                    val utcs  = repo.getUtcsFromDb()
+                    _state.update {
+                        it.copy(
+                            loading = false, loadingLookups = false,
+                            spese = spese, didLoadSpese = true,
+                            tipi = local.tipi, categorie = local.categorie,
+                            conti = local.conti, sottocategorie = local.sottocategorie,
+                            utcs = utcs, didLoadLookups = true,
+                            syncDone = true   // ← sblocca la UI
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    _state.update {
+                        it.copy(
+                            loading = false, loadingLookups = false,
+                            error = e.message,
+                            syncDone = true   // ← mostra comunque la UI con errore
+                        )
+                    }
+                }
+        }
+    }
 }
+
+
+
+data class SpeseFilters(
+    val query: String = "",
+    val mese: String? = null,
+    val tipo: String? = null,
+    val metodo: String? = null
+)
+
+enum class FilterKey { MESE, TIPO, METODO, QUERY }
+
+data class SpeseUiState(
+    val syncDone: Boolean = false,
+    val didLoadSpese: Boolean = false,
+    val didLoadLookups: Boolean = false,
+    val loading: Boolean = false,
+    val loadingLookups: Boolean = false,
+    val saving: Boolean = false,
+    val saveOkTick: Long = 0L,
+    val draftPrefillTick: Long = 0L,
+    val error: String? = null,
+
+    val spese: List<SpesaView> = emptyList(),
+    val utcs: List<UtcItem> = emptyList(),
+
+    val filters: SpeseFilters = SpeseFilters(),
+
+    val tipi: List<String> = emptyList(),
+    val categorie: List<String> = emptyList(),
+    val sottocategorie: List<SottoCatItem> = emptyList(),
+    val conti: List<String> = emptyList(),
+
+    val draftImporto: Double? = null,
+    val draftDescrizione: String? = null,
+    val draftData: String? = null,
+    val draftMetodo: String? = null
+)

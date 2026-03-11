@@ -1,8 +1,5 @@
 package com.emanuele.gestionespese.notifications
 
-import java.security.MessageDigest
-import java.util.Locale
-
 data class ParsedTxn(
     val amountCents: Long?,
     val currency: String?,
@@ -36,12 +33,4 @@ fun parseTransaction(title: String, text: String, big: String): ParsedTxn {
         currency = if (cents != null) "EUR" else null,
         merchant = merchant
     )
-}
-
-fun buildDedupKey(sourceLabel: String, merchant: String?, amountCents: Long?, timeMillis: Long): String {
-    // bucket 2 minuti per evitare doppioni ravvicinati
-    val bucket = timeMillis / (2 * 60 * 1000L)
-    val raw = "${sourceLabel.lowercase(Locale.ROOT)}|${merchant.orEmpty().lowercase(Locale.ROOT)}|${amountCents ?: -1}|$bucket"
-    val md = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray())
-    return md.joinToString("") { "%02x".format(it) }
 }

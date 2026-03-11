@@ -43,10 +43,7 @@ fun SummaryScreen(vm: SpeseViewModel, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Riepilogo") },
-                navigationIcon = {
-                    TextButton(onClick = onBack) { Text("Indietro") }
-                }
+                title = { Text("Riepilogo") }
             )
         }
     ) { padding ->
@@ -90,7 +87,7 @@ private fun MonthPicker(mesi: List<String>, selected: String?, onPick: (String) 
             label = { Text("Mese") },
             modifier = Modifier
                 .fillMaxWidth()
-                .menuAnchor(),
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
             colors = OutlinedTextFieldDefaults.colors(
                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                 focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
