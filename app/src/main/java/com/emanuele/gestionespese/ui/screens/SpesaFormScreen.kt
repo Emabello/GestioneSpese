@@ -13,8 +13,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.ClipEntry
+import android.content.ClipData
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.SpesaView
@@ -23,7 +26,9 @@ import com.emanuele.gestionespese.ui.theme.IncomeContainer
 import com.emanuele.gestionespese.ui.theme.OnExpense
 import com.emanuele.gestionespese.ui.theme.OnIncome
 import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -44,7 +49,6 @@ fun SpesaFormScreen(
     val isExisting = editingId != -1
     val saving = state.saving
 
-    // nuova spesa -> edit subito; esistente -> read-only finché non premi Modifica
     var editEnabled by remember(editingId) { mutableStateOf(editingId == -1) }
 
     val initialData = remember(editingSpesa) { editingSpesa?.data ?: LocalDate.now().format(formatter) }
@@ -54,7 +58,6 @@ fun SpesaFormScreen(
     val initialTipo = remember(editingSpesa) { editingSpesa?.tipo.orEmpty() }
     val initialConto = remember(editingSpesa) { editingSpesa?.conto.orEmpty() }
     val initialNote = remember(editingSpesa) { editingSpesa?.descrizione.orEmpty() }
-
     val initialCategoria = remember(editingSpesa) { editingSpesa?.categoria?.trim().orEmpty() }
     val initialSottocategoria = remember(editingSpesa) { editingSpesa?.sottocategoria?.trim().orEmpty() }
 
@@ -66,41 +69,32 @@ fun SpesaFormScreen(
     var categoria by remember(editingSpesa) { mutableStateOf(initialCategoria) }
     var sottocategoria by remember(editingSpesa) { mutableStateOf(initialSottocategoria) }
 
-    // ✅ PREFILL da Draft (solo per nuova spesa)
+    // Prefill da Draft (solo per nuova spesa)
     LaunchedEffect(editingId, state.draftPrefillTick) {
         if (editingId == -1 && state.draftPrefillTick != 0L) {
             editEnabled = true
             state.draftData?.let { data = it }
-            state.draftImporto?.let { imp ->
-                importoText = String.format(Locale.getDefault(), "%.2f", imp)
-            }
+            state.draftImporto?.let { importoText = String.format(Locale.getDefault(), "%.2f", it) }
             conto = state.draftMetodo.orEmpty()
             note = state.draftDescrizione.orEmpty()
         }
     }
 
-    // ✅ Carica lookup una volta
     LaunchedEffect(Unit) { vm.loadLookupsIfNeeded() }
 
-    // Popup errore
+    // Reset a cascata
+    LaunchedEffect(tipo) { categoria = ""; sottocategoria = "" }
+    LaunchedEffect(categoria) { sottocategoria = "" }
+
     var showErrorPopup by remember { mutableStateOf(false) }
     var errorPopupText by remember { mutableStateOf<String?>(null) }
-
     LaunchedEffect(state.error) {
         val err = state.error
-        if (!err.isNullOrBlank()) {
-            errorPopupText = err
-            showErrorPopup = true
-        }
+        if (!err.isNullOrBlank()) { errorPopupText = err; showErrorPopup = true }
     }
 
-    // Esci SOLO su successo
     LaunchedEffect(state.saveOkTick) {
-        if (state.saveOkTick != 0L) {
-            vm.consumeSaveOk()
-            editEnabled = false
-            onBack()
-        }
+        if (state.saveOkTick != 0L) { vm.consumeSaveOk(); editEnabled = false; onBack() }
     }
 
     var showDatePicker by remember { mutableStateOf(false) }
@@ -108,92 +102,46 @@ fun SpesaFormScreen(
 
     val importoValue = importoText.replace(",", ".").toDoubleOrNull()
 
-    val canSave =
-        editEnabled &&
-                !saving &&
-                importoValue != null &&
-                importoValue > 0.0 &&
-                data.isNotBlank() &&
-                tipo.isNotBlank() &&
-                conto.isNotBlank() &&
-                categoria.isNotBlank()
+    val canSave = editEnabled && !saving &&
+            importoValue != null && importoValue > 0.0 &&
+            data.isNotBlank() && tipo.isNotBlank() &&
+            conto.isNotBlank() && categoria.isNotBlank()
 
-    val utenteCorrente = "2 - A.BERTOLI" // <-- per ora fisso, poi lo mettiamo nello state se vuoi
-
-    val utcsUserActive = remember(state.utcs, utenteCorrente) {
-        state.utcs
-            .filter { it.attivo }
-            .filter { it.utente.trim().equals(utenteCorrente.trim(), ignoreCase = true) }
+    // UTCS filtrati per utenza corrente (viene dallo state del ViewModel)
+    val utcsUserActive = remember(state.utcs) {
+        state.utcs.filter { it.attivo }
     }
 
-// ✅ TIPI: SOLO quelli permessi da UTCS per quell’utente
     val tipiOptions = remember(utcsUserActive) {
-        utcsUserActive
-            .map { it.tipologia.trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
-            .sorted()
+        utcsUserActive.map { it.tipologia.trim() }.filter { it.isNotBlank() }.distinct().sorted()
     }
 
-// ✅ CATEGORIE: solo quelle permese da UTCS per (utente + tipologia)
     val categorieOptions = remember(utcsUserActive, tipo) {
         if (tipo.isBlank()) emptyList()
-        else {
-            utcsUserActive
-                .filter { it.tipologia.trim().equals(tipo.trim(), ignoreCase = true) }
-                .map { it.categoria.trim() }
-                .filter { it.isNotBlank() }
-                .distinct()
-                .sorted()
-        }
+        else utcsUserActive
+            .filter { it.tipologia.trim().equals(tipo.trim(), ignoreCase = true) }
+            .map { it.categoria.trim() }.filter { it.isNotBlank() }.distinct().sorted()
     }
 
-// ✅ SOTTOCATEGORIE: solo quelle permese da UTCS per (utente + tipologia + categoria)
     val sottocategorieOptions = remember(utcsUserActive, tipo, categoria) {
         if (tipo.isBlank() || categoria.isBlank()) emptyList()
-        else {
-            utcsUserActive
-                .filter { it.tipologia.trim().equals(tipo.trim(), ignoreCase = true) }
-                .filter { it.categoria.trim().equals(categoria.trim(), ignoreCase = true) }
-                .map { it.sottocategoria.trim() }
-                .filter { it.isNotBlank() }
-                .distinct()
-                .sorted()
-        }
+        else utcsUserActive
+            .filter { it.tipologia.trim().equals(tipo.trim(), ignoreCase = true) }
+            .filter { it.categoria.trim().equals(categoria.trim(), ignoreCase = true) }
+            .map { it.sottocategoria.trim() }.filter { it.isNotBlank() }.distinct().sorted()
     }
 
-// ✅ Conti: puoi tenerli da Room (state.conti) come prima
     val contiOptions = remember(state.conti) {
-        state.conti.map { it.trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
-            .sorted()
+        state.conti.map { it.trim() }.filter { it.isNotBlank() }.distinct().sorted()
     }
 
-// Reset a cascata (evita incoerenze)
-    LaunchedEffect(tipo) {
-        categoria = ""
-        sottocategoria = ""
-    }
-    LaunchedEffect(categoria) {
-        sottocategoria = ""
-    }
-
-    // ✅ categoria normalizzata: se è "3 - Spese" -> "3", se è "Spese" -> "spese"
-    val categoriaKeyNorm = remember(categoria) { normalizeCategoriaKey(categoria) }
-
-    // Quando cambia categoria -> reset sottocategoria (evita incoerenze)
-    LaunchedEffect(categoriaKeyNorm) { sottocategoria = "" }
-
+    // --- Dialogs ---
 
     if (showErrorPopup) {
-        val clipboardManager = LocalClipboardManager.current
-
+        val clipboard = LocalClipboard.current
+        val scope = rememberCoroutineScope()
         AlertDialog(
-            onDismissRequest = {
-                showErrorPopup = false
-                vm.clearError()
-            },
+            onDismissRequest = { showErrorPopup = false; vm.clearError() },
             title = { Text("Errore durante il salvataggio") },
             text = {
                 Column {
@@ -209,13 +157,13 @@ fun SpesaFormScreen(
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = {
-                        clipboardManager.setText(AnnotatedString(errorPopupText ?: "Errore sconosciuto"))
+                        scope.launch {
+                            clipboard.setClipEntry(
+                                ClipEntry(ClipData.newPlainText("errore", errorPopupText ?: ""))
+                            )
+                        }
                     }) { Text("Copia") }
-
-                    TextButton(onClick = {
-                        showErrorPopup = false
-                        vm.clearError()
-                    }) { Text("Chiudi") }
+                    TextButton(onClick = { showErrorPopup = false; vm.clearError() }) { Text("Chiudi") }
                 }
             }
         )
@@ -227,17 +175,18 @@ fun SpesaFormScreen(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
                 TextButton(onClick = {
-                    val millis = datePickerState.selectedDateMillis
-                    if (millis != null) {
-                        val picked = java.time.Instant.ofEpochMilli(millis)
-                            .atZone(java.time.ZoneId.systemDefault())
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        data = Instant.ofEpochMilli(millis)
+                            .atZone(ZoneId.systemDefault())
                             .toLocalDate()
-                        data = picked.format(formatter)
+                            .format(formatter)
                     }
                     showDatePicker = false
                 }) { Text("OK") }
             },
-            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Annulla") } }
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Annulla") }
+            }
         ) { DatePicker(state = datePickerState) }
     }
 
@@ -253,9 +202,13 @@ fun SpesaFormScreen(
                     onBack()
                 }) { Text("Elimina") }
             },
-            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Annulla") } }
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Annulla") }
+            }
         )
     }
+
+    // --- Scaffold ---
 
     Scaffold(
         topBar = {
@@ -269,7 +222,7 @@ fun SpesaFormScreen(
                 actions = {
                     if (isExisting) {
                         IconButton(onClick = { editEnabled = !editEnabled }) {
-                            Icon(imageVector = Icons.Default.Edit, contentDescription = "Modifica")
+                            Icon(Icons.Default.Edit, contentDescription = "Modifica")
                         }
                     }
                 }
@@ -279,9 +232,7 @@ fun SpesaFormScreen(
             AnimatedVisibility(visible = editEnabled) {
                 Surface(tonalElevation = 3.dp) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Button(
@@ -301,26 +252,18 @@ fun SpesaFormScreen(
                             modifier = Modifier.weight(1f)
                         ) {
                             if (saving) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
-                                )
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                 Spacer(Modifier.width(10.dp))
                                 Text("Salvataggio…")
                             } else {
                                 Text("Salva")
                             }
                         }
-
                         OutlinedButton(
                             onClick = {
-                                data = initialData
-                                importoText = initialImporto
-                                tipo = initialTipo
-                                conto = initialConto
-                                note = initialNote
-                                categoria = initialCategoria
-                                sottocategoria = initialSottocategoria
+                                data = initialData; importoText = initialImporto
+                                tipo = initialTipo; conto = initialConto; note = initialNote
+                                categoria = initialCategoria; sottocategoria = initialSottocategoria
                                 editEnabled = false
                             },
                             modifier = Modifier.weight(1f),
@@ -332,24 +275,20 @@ fun SpesaFormScreen(
         }
     ) { padding ->
 
-        val tipoSafe = tipo.ifBlank { "uscita" }
-        val isEntrata = tipoSafe.contains("entrata", ignoreCase = true)
-
+        val isEntrata = tipo.contains("entrata", ignoreCase = true)
         val importoHeader = importoValue ?: (editingSpesa?.importo ?: 0.0)
         val headerContainer = if (isEntrata) IncomeContainer else ExpenseContainer
         val headerOn = if (isEntrata) OnIncome else OnExpense
 
         Column(
             modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(padding).fillMaxSize()
+                .verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-
             if (saving) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
 
+            // Card riepilogo
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.elevatedCardColors(containerColor = headerContainer),
@@ -366,60 +305,38 @@ fun SpesaFormScreen(
                             style = MaterialTheme.typography.headlineSmall,
                             color = headerOn
                         )
-
                         AssistChip(
                             onClick = { },
                             label = { Text(tipo.ifBlank { "Tipologia n/d" }) },
                             colors = AssistChipDefaults.assistChipColors(
-                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                                labelColor = MaterialTheme.colorScheme.onSurface
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
                             )
                         )
                     }
-
                     Spacer(Modifier.height(8.dp))
-
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AssistChip(
-                            onClick = { },
-                            label = { Text(conto.ifBlank { "Conto n/d" }) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                                labelColor = MaterialTheme.colorScheme.onSurface
-                            )
-                        )
-                        AssistChip(
-                            onClick = { },
-                            label = { Text(data.ifBlank { "Data n/d" }) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                                labelColor = MaterialTheme.colorScheme.onSurface
-                            )
-                        )
+                        AssistChip(onClick = { }, label = { Text(conto.ifBlank { "Conto n/d" }) },
+                            colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)))
+                        AssistChip(onClick = { }, label = { Text(data.ifBlank { "Data n/d" }) },
+                            colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)))
                     }
                 }
             }
 
+            // Card campi
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-
-                    if (state.loadingLookups) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    }
+                    if (state.loadingLookups) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
 
                     OutlinedTextField(
-                        value = data,
-                        onValueChange = { },
-                        readOnly = true,
-                        enabled = editEnabled && !saving,
-                        label = { Text("Data") },
+                        value = data, onValueChange = { }, readOnly = true,
+                        enabled = editEnabled && !saving, label = { Text("Data") },
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
                             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -429,9 +346,7 @@ fun SpesaFormScreen(
                             IconButton(
                                 onClick = { if (editEnabled && !saving) showDatePicker = true },
                                 enabled = editEnabled && !saving
-                            ) {
-                                Icon(Icons.Default.DateRange, contentDescription = "Cambia data")
-                            }
+                            ) { Icon(Icons.Default.DateRange, contentDescription = "Cambia data") }
                         }
                     )
 
@@ -439,10 +354,8 @@ fun SpesaFormScreen(
                         value = importoText,
                         onValueChange = { if (editEnabled && !saving) importoText = it },
                         label = { Text("Importo (€)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        readOnly = !editEnabled || saving,
-                        enabled = editEnabled && !saving,
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        readOnly = !editEnabled || saving, enabled = editEnabled && !saving,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = OutlinedTextFieldDefaults.colors(
                             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -450,49 +363,17 @@ fun SpesaFormScreen(
                         )
                     )
 
-                    DropdownFieldString(
-                        label = "Tipologia",
-                        value = tipo,
-                        options = tipiOptions,
-                        enabled = editEnabled && !saving && !state.loadingLookups,
-                        onPick = { tipo = it }
-                    )
-
-                    DropdownFieldString(
-                        label = "Categoria",
-                        value = categoria,
-                        options = categorieOptions,
-                        enabled = editEnabled && !saving && !state.loadingLookups,
-                        onPick = { picked ->
-                            categoria = picked
-                            sottocategoria = ""
-                        }
-                    )
-
-                    DropdownFieldString(
-                        label = "Sottocategoria (opz.)",
-                        value = sottocategoria,
-                        options = sottocategorieOptions,
-                        enabled = editEnabled && !saving && !state.loadingLookups && categoriaKeyNorm.isNotBlank(),
-                        onPick = { sottocategoria = it }
-                    )
-
-                    DropdownFieldString(
-                        label = "Conto",
-                        value = conto,
-                        options = contiOptions,
-                        enabled = editEnabled && !saving && !state.loadingLookups,
-                        onPick = { conto = it }
-                    )
+                    DropdownFieldString("Tipologia", tipo, tipiOptions, editEnabled && !saving && !state.loadingLookups) { tipo = it }
+                    DropdownFieldString("Categoria", categoria, categorieOptions, editEnabled && !saving && !state.loadingLookups) { categoria = it; sottocategoria = "" }
+                    DropdownFieldString("Sottocategoria (opz.)", sottocategoria, sottocategorieOptions,
+                        editEnabled && !saving && !state.loadingLookups && categoria.isNotBlank()) { sottocategoria = it }
+                    DropdownFieldString("Conto", conto, contiOptions, editEnabled && !saving && !state.loadingLookups) { conto = it }
 
                     OutlinedTextField(
                         value = note,
                         onValueChange = { if (editEnabled && !saving) note = it },
-                        label = { Text("Note (opzionale)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        readOnly = !editEnabled || saving,
-                        enabled = editEnabled && !saving,
-                        minLines = 2,
+                        label = { Text("Note (opzionale)") }, modifier = Modifier.fillMaxWidth(),
+                        readOnly = !editEnabled || saving, enabled = editEnabled && !saving, minLines = 2,
                         colors = OutlinedTextFieldDefaults.colors(
                             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                             focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -525,63 +406,22 @@ private fun DropdownFieldString(
     onPick: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val safeValue = value.ifBlank { "Seleziona…" }
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { if (enabled) expanded = !expanded }
-    ) {
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { if (enabled) expanded = !expanded }) {
         OutlinedTextField(
-            value = safeValue,
-            onValueChange = { },
-            readOnly = true,
-            enabled = enabled,
+            value = value.ifBlank { "Seleziona…" },
+            onValueChange = { }, readOnly = true, enabled = enabled,
             label = { Text(label) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled),
+            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled),
             colors = OutlinedTextFieldDefaults.colors(
                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                 focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
             )
         )
-
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { opt ->
-                DropdownMenuItem(
-                    text = { Text(opt) },
-                    onClick = {
-                        onPick(opt)
-                        expanded = false
-                    }
-                )
+                DropdownMenuItem(text = { Text(opt) }, onClick = { onPick(opt); expanded = false })
             }
         }
     }
 }
-
-/**
- * Estrae l’ID iniziale da una label tipo:
- * - "3 - Spese"
- * - "3- Spese"
- * - "3"
- */
-private fun extractLeadingIdOrNull(label: String): String? {
-    val s = label.trim()
-    if (s.isBlank()) return null
-    val m = Regex("""^(\d+)\s*(?:-.*)?$""").find(s) ?: return null
-    return m.groupValues.getOrNull(1)
-}
-
-private fun normalizeCategoriaKey(labelOrId: String): String {
-    val s = labelOrId.trim()
-    if (s.isBlank()) return ""
-    val id = extractLeadingIdOrNull(s)
-    return (id ?: s).trim().lowercase()
-}
-
-private fun normalizeText(s: String): String =
-    s.trim().lowercase()

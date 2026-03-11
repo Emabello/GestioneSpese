@@ -1,0 +1,42 @@
+{
+  "project_info": {
+    "project_number": "1058320885515",
+    "project_id": "gestionespese",
+    "storage_bucket": ""
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1058320885515:android:debug",
+        "android_client_info": {
+          "package_name": "com.emanuele.gestionespese"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1058320885515-4sj57egqao1nr9l8unkbkuso1utggqe2.apps.googleusercontent.com",
+          "client_type": 3
+        },
+        {
+          "client_id": "1058320885515-1mg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.emanuele.gestionespese",
+            "certificate_hash": "dc562d23c690a137d37c23de9985af32d07ed01b"
+          }
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": ""
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
