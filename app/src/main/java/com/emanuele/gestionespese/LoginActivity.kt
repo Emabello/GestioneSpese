@@ -4,8 +4,8 @@ import android.content.ClipData
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.biometric.BiometricManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,62 +18,108 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.theme.GestioneSpeseTheme
 import com.emanuele.gestionespese.ui.viewmodel.LoginViewModel
-import kotlinx.coroutines.launch
-import androidx.credentials.CredentialManager
-import androidx.credentials.GetCredentialRequest
-import androidx.lifecycle.lifecycleScope
+import com.emanuele.gestionespese.utils.extractSubFromToken
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import kotlinx.coroutines.launch
 
-class LoginActivity : ComponentActivity() {
+private const val WEB_CLIENT_ID =
+    "1058320885515-4sj57egqao1nr9l8unkbkuso1utggqe2.apps.googleusercontent.com"
+
+class LoginActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val api = (application as MyApp).api
-        val viewModel: LoginViewModel = ViewModelProvider(this, object : ViewModelProvider.Factory {
-            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                @Suppress("UNCHECKED_CAST")
-                return LoginViewModel(api) as T
-            }
-        })[LoginViewModel::class.java]
-
-        // Aggiungi in onCreate, prima di setContent:
         val credentialManager = CredentialManager.create(this)
-        val scope = lifecycleScope
+
+        val viewModel: LoginViewModel = ViewModelProvider(
+            this, object : ViewModelProvider.Factory {
+                override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                    @Suppress("UNCHECKED_CAST")
+                    return LoginViewModel(api) as T
+                }
+            }
+        )[LoginViewModel::class.java]
+
+        // Stati per il dialog biometria — fuori da setContent per poterli modificare
+        // dall'esterno di Compose (dai callback onLoginSuccess/onGoogleLogin)
+        var showBiometricDialog by mutableStateOf(false)
+        var pendingApp by mutableStateOf<MyApp?>(null)
 
         setContent {
             GestioneSpeseTheme {
+
+                // Dialog biometria in Compose — nessun tema AppCompat necessario
+                if (showBiometricDialog) {
+                    AlertDialog(
+                        onDismissRequest = { },
+                        title = { Text("Accesso rapido") },
+                        text = {
+                            Text("Vuoi usare l'impronta digitale o il riconoscimento viso per i prossimi accessi?")
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showBiometricDialog = false
+                                pendingApp?.saveBiometricEnabled(true)
+                                startActivity(Intent(this@LoginActivity, MainActivity::class.java))
+                                finish()
+                            }) { Text("Sì, abilita") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                showBiometricDialog = false
+                                pendingApp?.saveBiometricEnabled(false)
+                                startActivity(Intent(this@LoginActivity, MainActivity::class.java))
+                                finish()
+                            }) { Text("No, grazie") }
+                        }
+                    )
+                }
+
                 LoginScreen(
                     viewModel = viewModel,
                     onLoginSuccess = { userLabel, userId, googleLinked ->
                         val app = application as MyApp
-                        app.currentUserLabel    = userLabel
-                        app.currentUserId       = userId
-                        app.currentGoogleLinked = googleLinked
-                        startActivity(Intent(this, MainActivity::class.java))
-                        finish()
-                    },
+                        app.saveSession(userLabel, userId, googleLinked)
 
-                    // Nel setContent, sostituisci onGoogleLogin:
+                        val biometricManager = BiometricManager.from(this)
+                        val canUseBiometric = biometricManager.canAuthenticate(
+                            BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                                    BiometricManager.Authenticators.BIOMETRIC_WEAK
+                        ) == BiometricManager.BIOMETRIC_SUCCESS
+
+                        if (canUseBiometric && !app.biometricEnabled) {
+                            pendingApp = app
+                            showBiometricDialog = true
+                        } else {
+                            startActivity(Intent(this, MainActivity::class.java))
+                            finish()
+                        }
+                    },
                     onGoogleLogin = {
-                        scope.launch {
+                        lifecycleScope.launch {
                             try {
                                 val googleIdOption = GetGoogleIdOption.Builder()
                                     .setFilterByAuthorizedAccounts(false)
-                                    .setServerClientId("1058320885515-4sj57egqao1nr9l8unkbkuso1utggqe2.apps.googleusercontent.com")
+                                    .setServerClientId(WEB_CLIENT_ID)
                                     .build()
 
                                 val request = GetCredentialRequest.Builder()
@@ -88,24 +134,52 @@ class LoginActivity : ComponentActivity() {
                                 val credential = result.credential
                                 if (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                                     val googleCred = GoogleIdTokenCredential.createFrom(credential.data)
+                                    val googleId   = extractSubFromToken(googleCred.idToken)
+
+                                    if (googleId.isBlank()) {
+                                        Toast.makeText(
+                                            this@LoginActivity,
+                                            "Impossibile leggere l'ID Google",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        return@launch
+                                    }
+
                                     viewModel.performGoogleLogin(
-                                        googleId = googleCred.id,
+                                        googleId = googleId,
                                         onSuccess = { label, userId, googleLinked ->
                                             val app = application as MyApp
-                                            app.currentUserLabel    = label
-                                            app.currentUserId       = userId
-                                            app.currentGoogleLinked = googleLinked
-                                            startActivity(Intent(this@LoginActivity, MainActivity::class.java))
-                                            finish()
+                                            app.saveSession(label, userId, googleLinked)
+
+                                            val biometricManager = BiometricManager.from(this@LoginActivity)
+                                            val canUseBiometric = biometricManager.canAuthenticate(
+                                                BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                                                        BiometricManager.Authenticators.BIOMETRIC_WEAK
+                                            ) == BiometricManager.BIOMETRIC_SUCCESS
+
+                                            if (canUseBiometric && !app.biometricEnabled) {
+                                                pendingApp = app
+                                                showBiometricDialog = true
+                                            } else {
+                                                startActivity(Intent(this@LoginActivity, MainActivity::class.java))
+                                                finish()
+                                            }
                                         },
                                         onError = { msg ->
-                                            // Mostra errore nel popup — ma siamo fuori da Compose
-                                            Toast.makeText(this@LoginActivity, msg, Toast.LENGTH_LONG).show()
+                                            Toast.makeText(
+                                                this@LoginActivity,
+                                                msg,
+                                                Toast.LENGTH_LONG
+                                            ).show()
                                         }
                                     )
                                 }
                             } catch (e: Exception) {
-                                Toast.makeText(this@LoginActivity, "Errore: ${e.message}", Toast.LENGTH_LONG).show()
+                                Toast.makeText(
+                                    this@LoginActivity,
+                                    "Errore Google Sign-In: ${e.message}",
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
                         }
                     }

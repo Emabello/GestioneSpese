@@ -1,16 +1,23 @@
 package com.emanuele.gestionespese.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -18,23 +25,27 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.emanuele.gestionespese.MyApp
+import com.emanuele.gestionespese.data.repo.DashboardRepository
 import com.emanuele.gestionespese.data.repo.SpesaDraftRepository
 import com.emanuele.gestionespese.ui.drafts.DraftsVmFactory
 import com.emanuele.gestionespese.ui.drafts.DraftsViewModel
+import com.emanuele.gestionespese.ui.screens.DashboardEditScreen
 import com.emanuele.gestionespese.ui.screens.DraftsScreen
 import com.emanuele.gestionespese.ui.screens.HomeScreen
 import com.emanuele.gestionespese.ui.screens.SettingsScreen
 import com.emanuele.gestionespese.ui.screens.SpesaFormScreen
 import com.emanuele.gestionespese.ui.screens.SummaryScreen
 import com.emanuele.gestionespese.ui.screens.SyncLoadingScreen
+import com.emanuele.gestionespese.ui.theme.Brand
+import com.emanuele.gestionespese.ui.viewmodel.DashboardViewModel
 import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
 
 object Routes {
-    const val MAIN = "main"
-    const val FORM = "form"
+    const val MAIN           = "main"
+    const val FORM           = "form"
+    const val DASHBOARD_EDIT = "dashboard_edit"
 }
 
-// Tab della bottom bar
 enum class MainTab(
     val label: String,
     val icon: ImageVector
@@ -50,22 +61,46 @@ fun AppNav(vm: SpeseViewModel) {
     val nav   = rememberNavController()
     val state by vm.state.collectAsState()
 
-    // Finché il sync non è completato mostra la schermata di caricamento
     if (!state.syncDone) {
         SyncLoadingScreen(error = state.error, onRetry = { vm.syncAll() })
         return
     }
 
+    // Crea DashboardViewModel a livello AppNav — persiste per tutta la sessione
+    val context = LocalContext.current
+    val dashVm: DashboardViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                val app  = context.applicationContext as MyApp
+                val repo = DashboardRepository(
+                    dao = app.db.dashboardDao(),
+                    api = app.api
+                )
+                @Suppress("UNCHECKED_CAST")
+                return DashboardViewModel(
+                    repo   = repo,
+                    utente = app.currentUserLabel ?: ""
+                ) as T
+            }
+        }
+    )
+
     NavHost(navController = nav, startDestination = Routes.MAIN) {
+
         composable(Routes.MAIN) {
             MainTabScreen(
-                vm = vm,
+                vm     = vm,
+                dashVm = dashVm,
                 onNavigateToForm = { id ->
                     if (id == null) vm.clearDraftPrefill()
                     nav.navigate(if (id != null) "${Routes.FORM}?id=$id" else Routes.FORM)
+                },
+                onEditDashboard = {
+                    nav.navigate(Routes.DASHBOARD_EDIT)
                 }
             )
         }
+
         composable(
             route = "${Routes.FORM}?id={id}",
             arguments = listOf(navArgument("id") {
@@ -76,19 +111,28 @@ fun AppNav(vm: SpeseViewModel) {
             val id = backStackEntry.arguments?.getInt("id") ?: -1
             SpesaFormScreen(vm = vm, editingId = id, onBack = { nav.popBackStack() })
         }
+
+        composable(Routes.DASHBOARD_EDIT) {
+            DashboardEditScreen(
+                dashVm = dashVm,
+                onBack = { nav.popBackStack() }
+            )
+        }
     }
 }
 
 @Composable
 fun MainTabScreen(
     vm: SpeseViewModel,
-    onNavigateToForm: (id: Int?) -> Unit
+    dashVm: DashboardViewModel,
+    onNavigateToForm: (id: Int?) -> Unit,
+    onEditDashboard: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     val context = LocalContext.current
-    val db = remember { (context.applicationContext as MyApp).db }
-    val repo = remember { SpesaDraftRepository(db.spesaDraftDao()) }
+    val db      = remember { (context.applicationContext as MyApp).db }
+    val repo    = remember { SpesaDraftRepository(db.spesaDraftDao()) }
     val vmDraft: DraftsViewModel = viewModel(factory = DraftsVmFactory(repo))
 
     Scaffold(
@@ -97,45 +141,59 @@ fun MainTabScreen(
                 MainTab.entries.forEachIndexed { index, tab ->
                     NavigationBarItem(
                         selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) }
+                        onClick  = { selectedTab = index },
+                        icon     = { Icon(tab.icon, contentDescription = tab.label) },
+                        label    = { Text(tab.label) }
                     )
+                }
+            }
+        },
+        floatingActionButton = {
+            if (selectedTab == MainTab.HOME.ordinal) {
+                FloatingActionButton(
+                    onClick        = { onNavigateToForm(null) },
+                    containerColor = Brand
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Aggiungi", tint = Color.White)
                 }
             }
         }
     ) { padding ->
-        when (selectedTab) {
-            MainTab.SUMMARY.ordinal -> SummaryScreen(
-                vm = vm,
-                onBack = { /* non serve, siamo in tab */ }
-            )
-
-            MainTab.HOME.ordinal -> HomeScreen(
-                vm = vm,
-                onAdd = { onNavigateToForm(null) },
-                onEdit = { id -> onNavigateToForm(id) },
-                // questi callback non servono più — navigazione ora è nei tab
-                onSummary = { selectedTab = MainTab.SUMMARY.ordinal },
-                onDrafts = { selectedTab = MainTab.DRAFTS.ordinal }
-            )
-
-            MainTab.DRAFTS.ordinal -> DraftsScreen(
-                vm = vmDraft,
-                onBack = { selectedTab = MainTab.HOME.ordinal },
-                onOpenDraft = { draft ->
-                    vm.prefillFromDraft(
-                        importo = draft.amountCents / 100.0,
-                        descrizione = draft.descrizione,
-                        dataMillis = draft.dateMillis,
-                        metodo = draft.metodoPagamento
-                    )
-                    vmDraft.delete(draft.id)
-                    onNavigateToForm(null)
-                }
-            )
-
-            MainTab.SETTINGS.ordinal -> SettingsScreen()
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            when (selectedTab) {
+                MainTab.SUMMARY.ordinal  -> SummaryScreen(
+                    vm              = vm,
+                    dashVm          = dashVm,
+                    onBack          = { },
+                    onEditDashboard = onEditDashboard
+                )
+                MainTab.HOME.ordinal     -> HomeScreen(
+                    vm        = vm,
+                    onAdd     = { onNavigateToForm(null) },
+                    onEdit    = { id -> onNavigateToForm(id) },
+                    onSummary = { selectedTab = MainTab.SUMMARY.ordinal },
+                    onDrafts  = { selectedTab = MainTab.DRAFTS.ordinal }
+                )
+                MainTab.DRAFTS.ordinal   -> DraftsScreen(
+                    vm          = vmDraft,
+                    onBack      = { selectedTab = MainTab.HOME.ordinal },
+                    onOpenDraft = { draft ->
+                        vm.prefillFromDraft(
+                            importo     = draft.amountCents / 100.0,
+                            descrizione = draft.descrizione,
+                            dataMillis  = draft.dateMillis,
+                            metodo      = draft.metodoPagamento
+                        )
+                        vmDraft.delete(draft.id)
+                        onNavigateToForm(null)
+                    }
+                )
+                MainTab.SETTINGS.ordinal -> SettingsScreen(vm = vm)
+            }
         }
     }
 }

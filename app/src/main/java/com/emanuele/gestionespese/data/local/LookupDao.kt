@@ -53,6 +53,9 @@ interface LookupDao {
     @Query("SELECT * FROM UTC_ENTITY")
     suspend fun getUtcs(): List<UtcEntity>
 
+    @Query("SELECT * FROM UTC_ENTITY WHERE utente = :utente")
+    suspend fun getUtcsByUtente(utente: String): List<UtcEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertUtcs(items: List<UtcEntity>)
 

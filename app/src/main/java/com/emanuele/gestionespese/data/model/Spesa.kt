@@ -17,6 +17,7 @@ data class SpesaView(
     val conto: String? = null,
     val importo: Double = 0.0,
     val tipo: String? = null,
+    val tipo_movimento: String? = null,
     val categoria: String? = null,
     val sottocategoria: String? = null,
     val descrizione: String? = null,
@@ -88,7 +89,8 @@ data class UtcItem(
     val tipologia: String,
     val categoria: String,
     val sottocategoria: String,
-    val attivo: Boolean
+    val attivo: Boolean,
+    val tipoMovimento: String? = null
 )
 
 data class LoginRequest(
@@ -115,4 +117,18 @@ data class GoogleLoginRequest(
     val resource: String = "utente",
     val op: String = "login_google",
     val google_id: String
+)
+
+data class SaveDashboardRequest(
+    val resource: String = "dashboard",
+    val op: String = "upsert",
+    val utente: String,
+    val layout_json: String
+)
+
+data class TipologiaRow(
+    val id: Int,
+    val descrizione: String? = null,
+    val attivo: Any? = null,
+    val tipo_movimento: String? = null
 )

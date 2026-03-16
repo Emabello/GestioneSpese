@@ -137,35 +137,50 @@ class SpeseRepository(
     }
 
     private suspend fun getConti(utenteId: String? = null): List<String> {
-        val rows: List<Map<String, Any?>> = api.getConti(utente = utenteId).data ?: emptyList()
+        // Legge dalla tabella UC filtrata per utente + attivo
+        val rows: List<Map<String, Any?>> = api.getUc(utente = utenteId).data ?: emptyList()
         return rows
             .filter { it.isActiveDefaultTrue() }
-            .mapNotNull { buildLabel(it.firstNonBlank("id")?.numToCleanString(), it.firstNonBlank("descrizione", "nome", "label")) }
-            .distinct().sorted()
+            .mapNotNull { m ->
+                // id_conto è tipo "1 - Webank" — lo usiamo direttamente come label
+                m.firstNonBlank("id_conto", "ID_CONTO")?.trim()
+            }
+            .distinct()
+            .sorted()
     }
 
     /** ===================== CACHE (ROOM) ===================== **/
 
     suspend fun getLookupsFromDb(utenteId: String? = null): LookupsLocal {
-        val conti = if (!utenteId.isNullOrBlank()) lookupDao.getConti(utenteId) else lookupDao.getConti("")
+        val conti = if (!utenteId.isNullOrBlank())
+            lookupDao.getConti(utenteId)   // ← filtrato per utente
+        else
+            lookupDao.getConti("")
         return LookupsLocal(
             tipi = lookupDao.getTipi(),
             categorie = lookupDao.getCategorie(),
-            sottocategorie = lookupDao.getSottocategoriePairs().map { SottoCatItem(it.categoria, it.sottocategoria) },
+            sottocategorie = lookupDao.getSottocategoriePairs()
+                .map { SottoCatItem(it.categoria, it.sottocategoria) },
             conti = conti
         )
     }
 
-    suspend fun getUtcsFromDb(): List<UtcItem> =
-        lookupDao.getUtcs().map {
+    suspend fun getUtcsFromDb(utenteId: String? = null): List<UtcItem> {
+        val entities = if (!utenteId.isNullOrBlank())
+            lookupDao.getUtcsByUtente(utenteId)
+        else
+            lookupDao.getUtcs()
+        return entities.map {
             UtcItem(
                 utente = it.utente,
                 tipologia = it.tipologia,
                 categoria = it.categoria,
                 sottocategoria = it.sottocategoria,
-                attivo = it.attivo
+                attivo = it.attivo,
+                tipoMovimento  = it.tipoMovimento
             )
         }
+    }
 
     suspend fun refreshLookupsFromRemoteAndSave(utenteId: String? = null) {
         val tipi = getTipi()
@@ -189,19 +204,37 @@ class SpeseRepository(
         })
 
         val utcRows: List<Map<String, Any?>> = api.getUtcs().data ?: emptyList()
+        val tipiRaw: List<Map<String, Any?>> = api.getTipi().data ?: emptyList()
+        val tipologiaTipoMap: Map<String, String> = tipiRaw.associate { m ->
+            val label = buildLabel(
+                m.firstNonBlank("id")?.numToCleanString(),
+                m.firstNonBlank("descrizione", "nome", "label")
+            ) ?: ""
+            label to (m.firstNonBlank("tipo_movimento", "TIPO_MOVIMENTO") ?: "uscita")
+        }
+
         val utcEntities = utcRows.mapNotNull { m ->
-            val utente       = m.firstNonBlank("id_utente", "utenza", "ID_UTENTE")?.trim()
-            val tipologia    = m.firstNonBlank("id_tipologia", "tipologia", "ID_TIPOLOGIA")?.trim()
-            val categoria    = m.firstNonBlank("id_categoria", "categoria", "ID_CATEGORIA")?.trim()
+            val utente         = m.firstNonBlank("id_utente", "utenza", "ID_UTENTE")?.trim()
+            val tipologia      = m.firstNonBlank("id_tipologia", "tipologia", "ID_TIPOLOGIA")?.trim()
+            val categoria      = m.firstNonBlank("id_categoria", "categoria", "ID_CATEGORIA")?.trim()
             val sottocategoria = m.firstNonBlank("id_sottocategoria", "sottocategoria", "ID_SOTTOCATEGORIA")?.trim()
-            if (utente.isNullOrBlank() || tipologia.isNullOrBlank() || categoria.isNullOrBlank() || sottocategoria.isNullOrBlank()) return@mapNotNull null
+            if (utente.isNullOrBlank() || tipologia.isNullOrBlank() ||
+                categoria.isNullOrBlank() || sottocategoria.isNullOrBlank()) return@mapNotNull null
+
+            // Cerca tipo_movimento dalla mappa tipologie
+            val tipoMovimento = tipologiaTipoMap[tipologia] ?: "uscita"
+
             UtcEntity(
-                key = utcKey(utente, tipologia, categoria, sottocategoria),
-                utente = utente, tipologia = tipologia, categoria = categoria,
+                key            = utcKey(utente, tipologia, categoria, sottocategoria),
+                utente         = utente,
+                tipologia      = tipologia,
+                categoria      = categoria,
                 sottocategoria = sottocategoria,
-                attivo = (m["attivo"] ?: m["ATTIVO"]).asBoolDefaultTrue()
+                attivo         = (m["attivo"] ?: m["ATTIVO"]).asBoolDefaultTrue(),
+                tipoMovimento  = tipoMovimento   // ← nuovo
             )
         }
+
         lookupDao.clearUtcs()
         lookupDao.upsertUtcs(utcEntities)
     }
@@ -217,6 +250,7 @@ private fun SpesaView.toEntity(utente: String): SpesaEntity {
         data = data ?: "",
         importo = importo,
         tipo = tipo ?: "",
+        tipoMovimento  = tipo_movimento,
         conto = conto,
         categoria = categoria,
         sottocategoria = sottocategoria,
@@ -232,6 +266,7 @@ private fun SpesaEntity.toSpesaView() = SpesaView(
     data = data,
     importo = importo,
     tipo = tipo,
+    tipo_movimento = tipoMovimento,
     conto = conto,
     categoria = categoria,
     sottocategoria = sottocategoria,

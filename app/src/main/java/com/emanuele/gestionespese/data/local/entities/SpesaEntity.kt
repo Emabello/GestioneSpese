@@ -10,6 +10,7 @@ data class SpesaEntity(
     val data: String,
     val importo: Double,
     val tipo: String,
+    val tipoMovimento: String? = null,
     val conto: String?,
     val categoria: String?,
     val sottocategoria: String?,
