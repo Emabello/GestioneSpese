@@ -29,9 +29,9 @@
             android:exported="false"/>
         <service
             android:name=".notifications.BankNotificationListener"
-            android:label="Gestione Spese Notification Listener"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
-            android:exported="false">
+            android:label="Gestione Spese"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>

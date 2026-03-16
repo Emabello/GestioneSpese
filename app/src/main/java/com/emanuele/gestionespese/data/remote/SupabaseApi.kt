@@ -75,4 +75,23 @@ interface SupabaseApi {
 
     @POST("exec")
     suspend fun saveDashboard(@Body body: SaveDashboardRequest): ApiEnvelope<Map<String, Any?>>
+
+    // ── Config CRUD generico ─────────────────────────────────────────────
+
+    @GET("exec")
+    suspend fun getConti(
+        @Query("resource") resource: String = "conto"
+    ): ApiEnvelope<List<Map<String, Any?>>>
+
+    // Insert generico
+    @POST("exec")
+    suspend fun insertRecord(@Body req: GenericInsertRequest): ApiEnvelope<Map<String, Any?>>
+
+    // Update generico
+    @POST("exec")
+    suspend fun updateRecord(@Body req: GenericUpdateRequest): ApiEnvelope<Map<String, Any?>>
+
+    // Delete generico
+    @POST("exec")
+    suspend fun deleteRecord(@Body req: GenericDeleteRequest): ApiEnvelope<Map<String, Any?>>
 }

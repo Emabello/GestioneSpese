@@ -22,7 +22,7 @@ class DraftsViewModel(private val repo: SpesaDraftRepository) : ViewModel() {
         val entity = SpesaDraftEntity(
             amountCents = listOf(900L, 2450L, 1299L, 560L, 3100L).random(),
             dateMillis = now,
-            metodoPagamento = "Webank",
+            metodoPagamento = "",
             descrizione = listOf(
                 "NEW MANGAL KEBAB DI T..(,MILANO)",
                 "ESSELUNGA MILANO",

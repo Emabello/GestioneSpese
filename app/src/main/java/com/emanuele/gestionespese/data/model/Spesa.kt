@@ -132,3 +132,22 @@ data class TipologiaRow(
     val attivo: Any? = null,
     val tipo_movimento: String? = null
 )
+
+data class GenericInsertRequest(
+    val resource: String,
+    val op: String = "insert",
+    val data: Map<String, Any?>
+)
+
+data class GenericUpdateRequest(
+    val resource: String,
+    val op: String = "update",
+    val id: Int,
+    val data: Map<String, Any?>
+)
+
+data class GenericDeleteRequest(
+    val resource: String,
+    val op: String = "delete",
+    val id: Int
+)
