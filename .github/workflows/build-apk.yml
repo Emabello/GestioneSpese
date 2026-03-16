@@ -37,14 +37,14 @@ jobs:
 
       - name: Restore debug keystore
         run: |
-          mkdir -p $HOME/.android
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > $HOME/.android/debug.keystore
-          echo "Keystore ripristinato in $HOME/.android/debug.keystore"
+          mkdir -p /home/runner/.android
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > /home/runner/.android/debug.keystore
+          echo "✓ Keystore salvato in /home/runner/.android/debug.keystore"
 
       - name: Verify keystore SHA1
         run: |
           keytool -list -v \
-            -keystore $HOME/.android/debug.keystore \
+            -keystore /home/runner/.android/debug.keystore \
             -alias androiddebugkey \
             -storepass android \
             -keypass android \
@@ -56,7 +56,7 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon
         env:
-          ANDROID_KEYSTORE_PATH:     ${{ github.workspace }}/../../.android/debug.keystore
+          ANDROID_KEYSTORE_PATH:     /home/runner/.android/debug.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
           ANDROID_KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
@@ -132,6 +132,7 @@ jobs:
           name: "Latest — v${{ steps.version.outputs.version }}"
           body: |
             Ultima build stabile — **v${{ steps.version.outputs.version }}**
+            Aggiornato automaticamente ad ogni push su master.
           files: app/build/outputs/apk/debug/GestioneSpese-v${{ steps.version.outputs.version }}.apk
           draft: false
           prerelease: false
