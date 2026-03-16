@@ -29,6 +29,7 @@ import com.emanuele.gestionespese.data.repo.DashboardRepository
 import com.emanuele.gestionespese.data.repo.SpesaDraftRepository
 import com.emanuele.gestionespese.ui.drafts.DraftsVmFactory
 import com.emanuele.gestionespese.ui.drafts.DraftsViewModel
+import com.emanuele.gestionespese.ui.screens.ConfigScreen
 import com.emanuele.gestionespese.ui.screens.DashboardEditScreen
 import com.emanuele.gestionespese.ui.screens.DraftsScreen
 import com.emanuele.gestionespese.ui.screens.HomeScreen
@@ -44,6 +45,7 @@ object Routes {
     const val MAIN           = "main"
     const val FORM           = "form"
     const val DASHBOARD_EDIT = "dashboard_edit"
+    const val CONFIG         = "config"
 }
 
 enum class MainTab(
@@ -66,7 +68,6 @@ fun AppNav(vm: SpeseViewModel) {
         return
     }
 
-    // Crea DashboardViewModel a livello AppNav — persiste per tutta la sessione
     val context = LocalContext.current
     val dashVm: DashboardViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
@@ -89,34 +90,53 @@ fun AppNav(vm: SpeseViewModel) {
 
         composable(Routes.MAIN) {
             MainTabScreen(
-                vm     = vm,
-                dashVm = dashVm,
-                onNavigateToForm = { id ->
-                    if (id == null) vm.clearDraftPrefill()
-                    nav.navigate(if (id != null) "${Routes.FORM}?id=$id" else Routes.FORM)
+                vm                 = vm,
+                dashVm             = dashVm,
+                onNavigateToForm   = { editId, draftId ->
+                    if (editId == null) vm.clearDraftPrefill()
+                    val route = when {
+                        editId != null && draftId != null -> "${Routes.FORM}?id=$editId&draftId=$draftId"
+                        editId != null                    -> "${Routes.FORM}?id=$editId"
+                        draftId != null                   -> "${Routes.FORM}?id=-1&draftId=$draftId"  // ← id=-1 esplicito
+                        else                              -> Routes.FORM
+                    }
+                    nav.navigate(route)
                 },
-                onEditDashboard = {
-                    nav.navigate(Routes.DASHBOARD_EDIT)
-                }
+                onEditDashboard    = { nav.navigate(Routes.DASHBOARD_EDIT) },
+                onNavigateToConfig = { nav.navigate(Routes.CONFIG) }
             )
         }
 
         composable(
-            route = "${Routes.FORM}?id={id}",
-            arguments = listOf(navArgument("id") {
-                type = NavType.IntType
-                defaultValue = -1
-            })
+            route = "${Routes.FORM}?id={id}&draftId={draftId}",
+            arguments = listOf(
+                navArgument("id") {
+                    type         = NavType.IntType
+                    defaultValue = -1
+                },
+                navArgument("draftId") {
+                    type         = NavType.LongType
+                    defaultValue = -1L
+                }
+            )
         ) { backStackEntry ->
-            val id = backStackEntry.arguments?.getInt("id") ?: -1
-            SpesaFormScreen(vm = vm, editingId = id, onBack = { nav.popBackStack() })
+            val id      = backStackEntry.arguments?.getInt("id")   ?: -1
+            val draftId = backStackEntry.arguments?.getLong("draftId") ?: -1L
+
+            SpesaFormScreen(
+                vm      = vm,
+                editingId = id,
+                draftId = if (draftId == -1L) null else draftId,
+                onBack  = { nav.popBackStack() }
+            )
         }
 
         composable(Routes.DASHBOARD_EDIT) {
-            DashboardEditScreen(
-                dashVm = dashVm,
-                onBack = { nav.popBackStack() }
-            )
+            DashboardEditScreen(dashVm = dashVm, onBack = { nav.popBackStack() })
+        }
+
+        composable(Routes.CONFIG) {
+            ConfigScreen(onBack = { nav.popBackStack() })
         }
     }
 }
@@ -125,8 +145,9 @@ fun AppNav(vm: SpeseViewModel) {
 fun MainTabScreen(
     vm: SpeseViewModel,
     dashVm: DashboardViewModel,
-    onNavigateToForm: (id: Int?) -> Unit,
-    onEditDashboard: () -> Unit
+    onNavigateToForm: (editId: Int?, draftId: Long?) -> Unit,  // ← aggiornata
+    onEditDashboard: () -> Unit,
+    onNavigateToConfig: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -151,7 +172,7 @@ fun MainTabScreen(
         floatingActionButton = {
             if (selectedTab == MainTab.HOME.ordinal) {
                 FloatingActionButton(
-                    onClick        = { onNavigateToForm(null) },
+                    onClick        = { onNavigateToForm(null, null) },
                     containerColor = Brand
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Aggiungi", tint = Color.White)
@@ -173,8 +194,8 @@ fun MainTabScreen(
                 )
                 MainTab.HOME.ordinal     -> HomeScreen(
                     vm        = vm,
-                    onAdd     = { onNavigateToForm(null) },
-                    onEdit    = { id -> onNavigateToForm(id) },
+                    onAdd     = { onNavigateToForm(null, null) },
+                    onEdit    = { id -> onNavigateToForm(id, null) },
                     onSummary = { selectedTab = MainTab.SUMMARY.ordinal },
                     onDrafts  = { selectedTab = MainTab.DRAFTS.ordinal }
                 )
@@ -182,17 +203,28 @@ fun MainTabScreen(
                     vm          = vmDraft,
                     onBack      = { selectedTab = MainTab.HOME.ordinal },
                     onOpenDraft = { draft ->
+                        android.util.Log.d("DRAFT_DEBUG", "=== APRO DRAFT ===")
+                        android.util.Log.d("DRAFT_DEBUG", "amountCents=${draft.amountCents}")
+                        android.util.Log.d("DRAFT_DEBUG", "importo=${draft.amountCents / 100.0}")
+                        android.util.Log.d("DRAFT_DEBUG", "descrizione=${draft.descrizione}")
+                        android.util.Log.d("DRAFT_DEBUG", "dateMillis=${draft.dateMillis}")
+                        android.util.Log.d("DRAFT_DEBUG", "metodo=${draft.metodoPagamento}")
+
+                        onNavigateToForm(null, draft.id)
+
                         vm.prefillFromDraft(
                             importo     = draft.amountCents / 100.0,
                             descrizione = draft.descrizione,
                             dataMillis  = draft.dateMillis,
                             metodo      = draft.metodoPagamento
                         )
-                        vmDraft.delete(draft.id)
-                        onNavigateToForm(null)
+                        // ← NON cancella il draft qui — lo cancellerà SpesaFormScreen dopo il salvataggio
                     }
                 )
-                MainTab.SETTINGS.ordinal -> SettingsScreen(vm = vm)
+                MainTab.SETTINGS.ordinal -> SettingsScreen(
+                    vm                 = vm,
+                    onNavigateToConfig = onNavigateToConfig
+                )
             }
         }
     }
