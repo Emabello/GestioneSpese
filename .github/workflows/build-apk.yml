@@ -5,13 +5,15 @@ on:
     branches: [ "master", "main" ]
   pull_request:
     branches: [ "master", "main" ]
-  # Permette di lanciare manualmente dalla UI di GitHub
   workflow_dispatch:
 
 jobs:
   build:
     name: Build Debug APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write    # ← permesso per creare release e tag
+      actions: read
 
     steps:
       - name: Checkout repository
@@ -40,7 +42,6 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
-      # ── Crea una Release automatica solo su push a master ──────────
       - name: Get short SHA
         if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
         id: slug
