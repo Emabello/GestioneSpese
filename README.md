@@ -83,7 +83,22 @@ Le tabelle gestite:
 - `LOG` — log di tutte le chiamate API
 
 ---
+## 📲 Download
 
+<div align="center">
+
+[![Ultima versione](https://img.shields.io/github/v/release/Emabello/GestioneSpese?label=Ultima%20versione&logo=android&color=teal&style=for-the-badge)](https://github.com/Emabello/GestioneSpese/releases/latest)
+
+[![Download APK](https://img.shields.io/badge/⬇️%20Download%20APK-GestioneSpese-teal?style=for-the-badge&logo=android)](https://github.com/Emabello/GestioneSpese/releases/download/latest/GestioneSpese-v1.0.0.apk)
+
+![Build status](https://img.shields.io/github/actions/workflow/status/Emabello/GestioneSpese/build-apk.yml?label=Build&style=flat-square)
+![Ultima release](https://img.shields.io/github/release-date/Emabello/GestioneSpese?label=Ultimo%20aggiornamento&style=flat-square)
+
+> ⚠️ Build di **debug** — abilita *"Installa da fonti sconosciute"* nelle impostazioni Android prima di installare.
+
+</div>
+
+---
 ## 🔄 CI/CD
 
 Ogni push su `master` scatena automaticamente:
