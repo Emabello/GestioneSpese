@@ -11,18 +11,32 @@ android {
     compileSdk {
         version = release(36)
     }
-
     defaultConfig {
         applicationId = "com.emanuele.gestionespese"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // ── Signing con keystore fisso (stesso SHA1 in locale e CI) ──────
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file(
+                System.getenv("ANDROID_KEYSTORE_PATH")
+                    ?: "${System.getProperty("user.home")}/.android/debug.keystore"
+            )
+            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: "android"
+            keyAlias      = System.getenv("ANDROID_KEY_ALIAS")         ?: "androiddebugkey"
+            keyPassword   = System.getenv("ANDROID_KEY_PASSWORD")      ?: "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -31,6 +45,7 @@ android {
             )
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -39,7 +54,7 @@ android {
         jvmTarget = "11"
     }
     buildFeatures {
-        compose = true
+        compose    = true
         buildConfig = true
     }
 }
@@ -48,12 +63,9 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.compose.animation.core.lint)
     val roomVersion = "2.6.1"
-
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
-
     ksp("androidx.room:room-compiler:$roomVersion")
-
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.gms:play-services-auth:21.0.0")
@@ -84,6 +96,5 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("androidx.compose.material:material-icons-extended:1.7.0") // O la versione che stai usando
-
+    implementation("androidx.compose.material:material-icons-extended:1.7.0")
 }
