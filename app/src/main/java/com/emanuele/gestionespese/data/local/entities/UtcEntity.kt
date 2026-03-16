@@ -11,5 +11,6 @@ data class UtcEntity(
     val tipologia: String,
     val categoria: String,
     val sottocategoria: String,
-    val attivo: Boolean
+    val attivo: Boolean,
+    val tipoMovimento: String? = null
 )

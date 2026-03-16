@@ -154,7 +154,7 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
         _state.update { it.copy(loadingLookups = true, error = null) }
         try {
             val local = repo.getLookupsFromDb(utenteId = currentUtente)
-            val utcsLocal = repo.getUtcsFromDb()
+            val utcsLocal  = repo.getUtcsFromDb(utenteId = currentUtente)
 
             val hasLocal = local.tipi.isNotEmpty()
                     && local.categorie.isNotEmpty()
@@ -179,7 +179,7 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
             repo.refreshLookupsFromRemoteAndSave(utenteId = currentUtente)
 
             val local2 = repo.getLookupsFromDb(utenteId = currentUtente)
-            val utcsLocal2 = repo.getUtcsFromDb()
+            val utcsLocal2 = repo.getUtcsFromDb(utenteId = currentUtente)
 
             _state.update {
                 it.copy(
@@ -217,7 +217,7 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
                 .onSuccess {
                     val spese = repo.list(currentUtente)
                     val local = repo.getLookupsFromDb(utenteId = currentUtente)
-                    val utcs  = repo.getUtcsFromDb()
+                    val utcs = repo.getUtcsFromDb(utenteId = currentUtente)
                     _state.update {
                         it.copy(
                             loading = false, loadingLookups = false,

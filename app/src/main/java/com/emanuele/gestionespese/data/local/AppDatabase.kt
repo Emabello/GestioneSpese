@@ -12,13 +12,15 @@ import com.emanuele.gestionespese.data.local.entities.*
         ContoEntity::class,
         SottoCategoriaEntity::class,
         UtcEntity::class,
-        SpesaEntity::class
+        SpesaEntity::class,
+        DashboardEntity::class
     ],
-    version = 5,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun spesaDraftDao(): SpesaDraftDao
     abstract fun lookupDao(): LookupDao
-    abstract fun spesaDao(): SpesaDao  // ← nuovo
+    abstract fun spesaDao(): SpesaDao
+    abstract fun dashboardDao(): DashboardDao
 }

@@ -36,9 +36,9 @@ interface SupabaseApi {
     ): ApiEnvelope<List<Map<String, Any?>>>
 
     @GET("exec")
-    suspend fun getConti(
-        @Query("resource") resource: String = "conto",
-        @Query("utenza") utente: String? = null
+    suspend fun getUc(
+        @Query("resource") resource: String = "uc",
+        @Query("utente") utente: String? = null
     ): ApiEnvelope<List<Map<String, Any?>>>
 
     @GET("exec")
@@ -66,4 +66,13 @@ interface SupabaseApi {
 
     @POST("exec")
     suspend fun loginGoogle(@Body body: GoogleLoginRequest): ApiEnvelope<Map<String, Any?>>
+
+    @GET("exec")
+    suspend fun getDashboard(
+        @Query("resource") resource: String = "dashboard",
+        @Query("utente") utente: String
+    ): ApiEnvelope<List<Map<String, Any?>>>
+
+    @POST("exec")
+    suspend fun saveDashboard(@Body body: SaveDashboardRequest): ApiEnvelope<Map<String, Any?>>
 }
