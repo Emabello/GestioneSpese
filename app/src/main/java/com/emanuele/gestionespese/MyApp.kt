@@ -22,17 +22,20 @@ class MyApp : Application() {
     var currentUserId: Int? = null
     var currentGoogleLinked: Boolean = false
     var biometricEnabled: Boolean = false
+    var biometricAsked: Boolean = false
+    var sessionActive: Boolean = false
 
     override fun onCreate() {
         super.onCreate()
 
         prefs = getSharedPreferences("gs_session", Context.MODE_PRIVATE)
 
-        // Ripristina sessione salvata
-        currentUserLabel   = prefs.getString("user_label", null)
-        currentUserId      = prefs.getInt("user_id", -1).takeIf { it != -1 }
+        currentUserLabel    = prefs.getString("user_label", null)
+        currentUserId       = prefs.getInt("user_id", -1).takeIf { it != -1 }
         currentGoogleLinked = prefs.getBoolean("google_linked", false)
-        biometricEnabled   = prefs.getBoolean("biometric_enabled", false)
+        biometricEnabled    = prefs.getBoolean("biometric_enabled", false)
+        biometricAsked      = prefs.getBoolean("biometric_asked", false)
+        sessionActive    = prefs.getBoolean("session_active", false)
 
         db = Room.databaseBuilder(
             applicationContext,
@@ -44,7 +47,7 @@ class MyApp : Application() {
 
         val retrofit = RetrofitProvider.create(
             baseUrl = getString(R.string.backend_url),
-            apiKey = getString(R.string.backend_api_key)
+            apiKey  = getString(R.string.backend_api_key)
         )
         api = retrofit.create(SupabaseApi::class.java)
     }
@@ -53,23 +56,34 @@ class MyApp : Application() {
         currentUserLabel    = userLabel
         currentUserId       = userId
         currentGoogleLinked = googleLinked
+        sessionActive       = true
         prefs.edit()
             .putString("user_label", userLabel)
             .putInt("user_id", userId)
             .putBoolean("google_linked", googleLinked)
+            .putBoolean("session_active", true)
             .apply()
     }
 
     fun saveBiometricEnabled(enabled: Boolean) {
         biometricEnabled = enabled
-        prefs.edit().putBoolean("biometric_enabled", enabled).apply()
+        biometricAsked   = true
+        prefs.edit()
+            .putBoolean("biometric_enabled", enabled)
+            .putBoolean("biometric_asked", true)
+            .apply()
     }
 
     fun clearSession() {
         currentUserLabel    = null
         currentUserId       = null
         currentGoogleLinked = false
-        biometricEnabled    = false
-        prefs.edit().clear().apply()
+        sessionActive       = false
+        prefs.edit()
+            .remove("user_label")
+            .remove("user_id")
+            .remove("google_linked")
+            .putBoolean("session_active", false)
+            .apply()
     }
 }

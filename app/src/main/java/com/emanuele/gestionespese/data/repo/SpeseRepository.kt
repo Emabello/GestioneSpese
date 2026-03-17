@@ -7,11 +7,14 @@ import com.emanuele.gestionespese.data.local.sottoKey
 import com.emanuele.gestionespese.data.local.utcKey
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.data.remote.SupabaseApi
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 class SpeseRepository(
     private val api: SupabaseApi,
     private val lookupDao: LookupDao,
-    private val spesaDao: SpesaDao      // ← nuovo
+    private val spesaDao: SpesaDao
 ) {
 
     /** ===================== SPESE — lettura da Room ===================== **/
@@ -28,11 +31,15 @@ class SpeseRepository(
         spesaDao.upsertAll(entities)
     }
 
-    /** ===================== SYNC COMPLETO (spese + lookups) ===================== **/
+    /** ===================== SYNC COMPLETO — spese + lookups in parallelo ===================== **/
 
     suspend fun syncAll(utente: String) {
-        syncSpese(utente)
-        refreshLookupsFromRemoteAndSave(utenteId = utente)
+        coroutineScope {
+            val dSpese   = async { syncSpese(utente) }
+            val dLookups = async { refreshLookupsFromRemoteAndSave(utenteId = utente) }
+            dSpese.await()
+            dLookups.await()
+        }
     }
 
     /** ===================== SPESE — scrittura (remote + aggiorna Room) ===================== **/
@@ -64,7 +71,7 @@ class SpeseRepository(
             )
         )
         if (res.error != null) throw IllegalStateException(res.error)
-        syncSpese(utente)   // aggiorna Room dopo insert
+        syncSpese(utente)
     }
 
     suspend fun update(
@@ -95,13 +102,13 @@ class SpeseRepository(
             )
         )
         if (res.error != null) throw IllegalStateException(res.error)
-        syncSpese(utente)   // aggiorna Room dopo update
+        syncSpese(utente)
     }
 
     suspend fun delete(id: Int, utente: String) {
         val res = api.deleteSpesa(DeleteRequest(resource = "spese", id = id))
         if (res.error != null) throw IllegalStateException(res.error)
-        spesaDao.deleteById(id)   // rimuove solo la riga, senza refetch completo
+        spesaDao.deleteById(id)
     }
 
     /** ===================== LOOKUPS (REMOTE) ===================== **/
@@ -110,9 +117,17 @@ class SpeseRepository(
         val rows: List<Map<String, Any?>> = api.getTipi().data ?: emptyList()
         return rows
             .filter { it.isActiveDefaultTrue() }
-            .mapNotNull { buildLabel(it.firstNonBlank("id")?.numToCleanString(), it.firstNonBlank("descrizione", "nome", "label")) }
+            .mapNotNull {
+                buildLabel(
+                    it.firstNonBlank("id")?.numToCleanString(),
+                    it.firstNonBlank("descrizione", "nome", "label")
+                )
+            }
             .distinct().sorted()
     }
+
+    private suspend fun getTipiRaw(): List<Map<String, Any?>> =
+        api.getTipi().data ?: emptyList()
 
     private suspend fun getCategorie(): List<String> {
         val rows: List<CategoriaRow> = api.getCategorie().data ?: emptyList()
@@ -137,14 +152,10 @@ class SpeseRepository(
     }
 
     private suspend fun getConti(utenteId: String? = null): List<String> {
-        // Legge dalla tabella UC filtrata per utente + attivo
         val rows: List<Map<String, Any?>> = api.getUc(utente = utenteId).data ?: emptyList()
         return rows
             .filter { it.isActiveDefaultTrue() }
-            .mapNotNull { m ->
-                // id_conto è tipo "1 - Webank" — lo usiamo direttamente come label
-                m.firstNonBlank("id_conto", "ID_CONTO")?.trim()
-            }
+            .mapNotNull { m -> m.firstNonBlank("id_conto", "ID_CONTO")?.trim() }
             .distinct()
             .sorted()
     }
@@ -153,15 +164,15 @@ class SpeseRepository(
 
     suspend fun getLookupsFromDb(utenteId: String? = null): LookupsLocal {
         val conti = if (!utenteId.isNullOrBlank())
-            lookupDao.getConti(utenteId)   // ← filtrato per utente
+            lookupDao.getConti(utenteId)
         else
             lookupDao.getConti("")
         return LookupsLocal(
-            tipi = lookupDao.getTipi(),
-            categorie = lookupDao.getCategorie(),
+            tipi           = lookupDao.getTipi(),
+            categorie      = lookupDao.getCategorie(),
             sottocategorie = lookupDao.getSottocategoriePairs()
                 .map { SottoCatItem(it.categoria, it.sottocategoria) },
-            conti = conti
+            conti          = conti
         )
     }
 
@@ -172,40 +183,61 @@ class SpeseRepository(
             lookupDao.getUtcs()
         return entities.map {
             UtcItem(
-                utente = it.utente,
-                tipologia = it.tipologia,
-                categoria = it.categoria,
+                utente         = it.utente,
+                tipologia      = it.tipologia,
+                categoria      = it.categoria,
                 sottocategoria = it.sottocategoria,
-                attivo = it.attivo,
+                attivo         = it.attivo,
                 tipoMovimento  = it.tipoMovimento
             )
         }
     }
 
     suspend fun refreshLookupsFromRemoteAndSave(utenteId: String? = null) {
-        val tipi = getTipi()
-        val categorie = getCategorie()
-        val sotto = getSottocategorie()
-        val conti = getConti(utenteId)
 
+        // ── Lancia tutte le 6 chiamate API in parallelo ───────────────────────
+        val tipiList:      List<String>
+        val categorieList: List<String>
+        val sottoList:     List<SottoCatItem>
+        val contiList:     List<String>
+        val utcRowsList:   List<Map<String, Any?>>
+        val tipiRawList:   List<Map<String, Any?>>
+
+        coroutineScope {
+            val dTipi      = async { getTipi() }
+            val dCategorie = async { getCategorie() }
+            val dSotto     = async { getSottocategorie() }
+            val dConti     = async { getConti(utenteId) }
+            val dUtcRows   = async { api.getUtcs().data ?: emptyList<Map<String, Any?>>() }
+            val dTipiRaw   = async { getTipiRaw() }
+
+            tipiList      = dTipi.await()
+            categorieList = dCategorie.await()
+            sottoList     = dSotto.await()
+            contiList     = dConti.await()
+            utcRowsList   = dUtcRows.await()
+            tipiRawList   = dTipiRaw.await()
+        }
+
+
+        // ── Scrittura su Room ─────────────────────────────────────────────────
         lookupDao.clearTipi()
-        lookupDao.upsertTipi(tipi.map { TipoEntity(it) })
+        lookupDao.upsertTipi(tipiList.map { TipoEntity(it) })
         lookupDao.clearCategorie()
-        lookupDao.upsertCategorie(categorie.map { CategoriaEntity(it) })
+        lookupDao.upsertCategorie(categorieList.map { CategoriaEntity(it) })
         lookupDao.clearConti()
-        lookupDao.upsertConti(conti.map { ContoEntity(value = it, utenteId = utenteId ?: "") })
+        lookupDao.upsertConti(contiList.map { ContoEntity(value = it, utenteId = utenteId ?: "") })
         lookupDao.clearSottocategorie()
-        lookupDao.upsertSottocategorie(sotto.map {
+        lookupDao.upsertSottocategorie(sottoList.map {
             SottoCategoriaEntity(
-                key = sottoKey(it.categoria, it.sottocategoria),
-                categoria = it.categoria.trim(),
+                key            = sottoKey(it.categoria, it.sottocategoria),
+                categoria      = it.categoria.trim(),
                 sottocategoria = it.sottocategoria.trim()
             )
         })
 
-        val utcRows: List<Map<String, Any?>> = api.getUtcs().data ?: emptyList()
-        val tipiRaw: List<Map<String, Any?>> = api.getTipi().data ?: emptyList()
-        val tipologiaTipoMap: Map<String, String> = tipiRaw.associate { m ->
+        // ── Costruzione mappa tipologia → tipoMovimento ───────────────────────
+        val tipologiaTipoMap: Map<String, String> = tipiRawList.associate { m ->
             val label = buildLabel(
                 m.firstNonBlank("id")?.numToCleanString(),
                 m.firstNonBlank("descrizione", "nome", "label")
@@ -213,16 +245,14 @@ class SpeseRepository(
             label to (m.firstNonBlank("tipo_movimento", "TIPO_MOVIMENTO") ?: "uscita")
         }
 
-        val utcEntities = utcRows.mapNotNull { m ->
+        // ── UTC entities ──────────────────────────────────────────────────────
+        val utcEntities = utcRowsList.mapNotNull { m ->
             val utente         = m.firstNonBlank("id_utente", "utenza", "ID_UTENTE")?.trim()
             val tipologia      = m.firstNonBlank("id_tipologia", "tipologia", "ID_TIPOLOGIA")?.trim()
             val categoria      = m.firstNonBlank("id_categoria", "categoria", "ID_CATEGORIA")?.trim()
             val sottocategoria = m.firstNonBlank("id_sottocategoria", "sottocategoria", "ID_SOTTOCATEGORIA")?.trim()
             if (utente.isNullOrBlank() || tipologia.isNullOrBlank() ||
                 categoria.isNullOrBlank() || sottocategoria.isNullOrBlank()) return@mapNotNull null
-
-            // Cerca tipo_movimento dalla mappa tipologie
-            val tipoMovimento = tipologiaTipoMap[tipologia] ?: "uscita"
 
             UtcEntity(
                 key            = utcKey(utente, tipologia, categoria, sottocategoria),
@@ -231,7 +261,7 @@ class SpeseRepository(
                 categoria      = categoria,
                 sottocategoria = sottocategoria,
                 attivo         = (m["attivo"] ?: m["ATTIVO"]).asBoolDefaultTrue(),
-                tipoMovimento  = tipoMovimento   // ← nuovo
+                tipoMovimento  = tipologiaTipoMap[tipologia] ?: "uscita"
             )
         }
 
@@ -245,30 +275,30 @@ class SpeseRepository(
 private fun SpesaView.toEntity(utente: String): SpesaEntity {
     val parts = data?.split("-")
     return SpesaEntity(
-        id = id,
-        utente = utente,
-        data = data ?: "",
-        importo = importo,
-        tipo = tipo ?: "",
+        id             = id,
+        utente         = utente,
+        data           = data ?: "",
+        importo        = importo,
+        tipo           = tipo ?: "",
         tipoMovimento  = tipo_movimento,
-        conto = conto,
-        categoria = categoria,
+        conto          = conto,
+        categoria      = categoria,
         sottocategoria = sottocategoria,
-        descrizione = descrizione,
-        mese = parts?.getOrNull(1)?.toIntOrNull(),
-        anno = parts?.getOrNull(0)?.toIntOrNull()
+        descrizione    = descrizione,
+        mese           = parts?.getOrNull(1)?.toIntOrNull(),
+        anno           = parts?.getOrNull(0)?.toIntOrNull()
     )
 }
 
 private fun SpesaEntity.toSpesaView() = SpesaView(
-    id = id,
-    utente = utente,
-    data = data,
-    importo = importo,
-    tipo = tipo,
+    id             = id,
+    utente         = utente,
+    data           = data,
+    importo        = importo,
+    tipo           = tipo,
     tipo_movimento = tipoMovimento,
-    conto = conto,
-    categoria = categoria,
+    conto          = conto,
+    categoria      = categoria,
     sottocategoria = sottocategoria,
-    descrizione = descrizione
+    descrizione    = descrizione
 )
