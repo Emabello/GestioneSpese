@@ -93,8 +93,17 @@ class StartActivity : FragmentActivity() {
                     onSuccess()
                 }
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    // Errore o annullato → fallback al login
-                    onFallback()
+                    if (errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
+                        errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON
+                    ) {
+                        // L'utente ha annullato o premuto "Usa password"
+                        // → vai alla login MA NON cancellare la sessione
+                        startActivity(Intent(this@StartActivity, LoginActivity::class.java))
+                        finish()
+                    } else {
+                        // Errore hardware/sistema reale → fallback completo
+                        onFallback()
+                    }
                 }
                 override fun onAuthenticationFailed() {
                     // Impronta non riconosciuta — il sistema riprova da solo
