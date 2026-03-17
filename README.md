@@ -141,12 +141,66 @@ git clone https://github.com/Emabello/GestioneSpese.git
 ---
 
 ## 📁 Branch strategy
+
 ```
 master          ← sempre stabile, deploy automatico
   └── feature/nome-feature   ← sviluppo
   └── fix/nome-bug           ← bug fix
   └── hotfix/urgente         ← hotfix critici
 ```
+
+### 🔧 Workflow completo per ogni modifica
+
+**1. Prima di tutto — sincronizza master e pulisci i branch vecchi:**
+
+```powershell
+# Sincronizza master locale con il remoto
+git checkout master
+git pull origin master
+
+# Pulisci i riferimenti ai branch remoti cancellati
+git fetch --prune
+
+# Verifica i branch locali ancora presenti
+git branch
+```
+
+Se vedi branch locali vecchi non più necessari, cancellali:
+
+```powershell
+git branch -d nome-branch-vecchio
+```
+
+**2. Per ogni nuova modifica — parti sempre da master aggiornato:**
+
+```powershell
+# Assicurati di essere su master aggiornato
+git checkout master
+git pull origin master
+
+# Crea il branch per la modifica
+git checkout -b feature/nome-feature   # nuova funzionalità
+git checkout -b fix/nome-bug           # bug fix
+git checkout -b hotfix/urgente         # hotfix critico
+```
+
+**3. Lavora, poi committa e pusha:**
+
+```powershell
+git add .
+git commit -m "feat: descrizione breve della modifica"
+git push origin feature/nome-feature
+```
+
+**4. Apri la PR su GitHub:**
+- Vai su GitHub → **Pull Requests** → **New pull request**
+- Base: `master` ← Compare: `feature/nome-feature`
+- Descrivi le modifiche → **Merge**
+- Cancella il branch dopo il merge
+
+**5. Ricomincia dal punto 2 per la prossima modifica.**
+
+> 💡 **Convenzione commit**: usa prefissi `feat:`, `fix:`, `refactor:`, `chore:`, `docs:` per mantenere la history leggibile.
 
 ---
 
