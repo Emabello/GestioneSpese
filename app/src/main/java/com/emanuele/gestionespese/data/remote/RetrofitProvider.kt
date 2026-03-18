@@ -26,13 +26,13 @@ object RetrofitProvider {
      * @param apiKey  Chiave API da aggiungere come query parameter.
      * @return Istanza [Retrofit] con [GsonConverterFactory] e gli interceptor configurati.
      */
+
     fun create(baseUrl: String, apiKey: String): Retrofit {
 
-        // Interceptor che logga in DevLogger (visibile nella modalità sviluppatore)
         val devLogInterceptor = okhttp3.Interceptor { chain ->
-            val req  = chain.request()
-            val url  = req.url.toString()
-                .replace(Regex("key=[^&]+"), "key=***")  // oscura la API key
+            val req     = chain.request()
+            val url     = req.url.toString()
+                .replace(Regex("key=[^&]+"), "key=***")
                 .take(100)
             val startMs = System.currentTimeMillis()
             val resp    = chain.proceed(req)
@@ -44,7 +44,10 @@ object RetrofitProvider {
 
         val client = OkHttpClient.Builder()
             .addInterceptor(ApiKeyInterceptor(apiKey))
-            .addInterceptor(devLogInterceptor)          // ← sempre attivo (API key oscurata)
+            .addInterceptor(devLogInterceptor)
+            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
             .apply {
                 if (BuildConfig.DEBUG) {
                     addInterceptor(

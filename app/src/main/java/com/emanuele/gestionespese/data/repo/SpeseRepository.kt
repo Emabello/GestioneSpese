@@ -259,50 +259,28 @@ class SpeseRepository(
      */
     suspend fun refreshLookupsFromRemoteAndSave(utenteId: String? = null) {
 
-        // ── Lancia le chiamate API in parallelo con supervisorScope ───────────
-        // supervisorScope: il fallimento di un figlio non cancella i fratelli.
-        // Ogni async isola la propria eccezione con runCatching → emptyList di default.
-        // La chiamata a tipologia è unica: i dati raw vengono riutilizzati per
-        // costruire sia la lista etichettata (tipiList) sia la mappa (tipiRawList).
-        val tipiList:      List<String>
-        val categorieList: List<String>
-        val sottoList:     List<SottoCatItem>
-        val contiList:     List<String>
-        val utcRowsList:   List<Map<String, Any?>>
-        val tipiRawList:   List<Map<String, Any?>>
+        // ── Chiamate SEQUENZIALI — GAS non regge le parallele ─────────────
+        val tipiRawList   = runCatching { api.getTipi().data     ?: emptyList<Map<String, Any?>>() }.getOrDefault(emptyList())
+        val categorieList = runCatching { getCategorie()         }.getOrDefault(emptyList())
+        val sottoList     = runCatching { getSottocategorie()    }.getOrDefault(emptyList())
+        val contiList     = runCatching { getConti(utenteId)     }.getOrDefault(emptyList())
+        val utcRowsList   = runCatching { api.getUtcs().data     ?: emptyList<Map<String, Any?>>() }.getOrDefault(emptyList())
 
-        supervisorScope {
-            val dTipiRaw   = async { runCatching { api.getTipi().data ?: emptyList<Map<String, Any?>>() }.getOrDefault(emptyList()) }
-            val dCategorie = async { runCatching { getCategorie() }.getOrDefault(emptyList()) }
-            val dSotto     = async { runCatching { getSottocategorie() }.getOrDefault(emptyList()) }
-            val dConti     = async { runCatching { getConti(utenteId) }.getOrDefault(emptyList()) }
-            val dUtcRows   = async { runCatching { api.getUtcs().data ?: emptyList<Map<String, Any?>>() }.getOrDefault(emptyList()) }
+        val tipiList = tipiRawList
+            .filter { it.isActiveDefaultTrue() }
+            .mapNotNull {
+                buildLabel(
+                    it.firstNonBlank("id")?.numToCleanString(),
+                    it.firstNonBlank("descrizione", "nome", "label")
+                )
+            }
+            .distinct().sorted()
 
-            val rawRows    = dTipiRaw.await()
-            tipiRawList   = rawRows
-            tipiList      = rawRows
-                .filter { it.isActiveDefaultTrue() }
-                .mapNotNull {
-                    buildLabel(
-                        it.firstNonBlank("id")?.numToCleanString(),
-                        it.firstNonBlank("descrizione", "nome", "label")
-                    )
-                }
-                .distinct().sorted()
-
-            categorieList = dCategorie.await()
-            sottoList     = dSotto.await()
-            contiList     = dConti.await()
-            utcRowsList   = dUtcRows.await()
-        }
-
-        // Se tutte le chiamate sono fallite segnala l'errore al ViewModel
         if (tipiList.isEmpty() && categorieList.isEmpty() && contiList.isEmpty() && utcRowsList.isEmpty()) {
             throw java.io.IOException("Tutte le chiamate API di lookup sono fallite (timeout o rete assente)")
         }
 
-
-        // ── Scrittura su Room ─────────────────────────────────────────────────
+        // ── Scrittura su Room ─────────────────────────────────────────────
         lookupDao.clearTipi()
         lookupDao.upsertTipi(tipiList.map { TipoEntity(it) })
         lookupDao.clearCategorie()
@@ -318,7 +296,6 @@ class SpeseRepository(
             )
         })
 
-        // ── Costruzione mappa tipologia → tipoMovimento ───────────────────────
         val tipologiaTipoMap: Map<String, String> = tipiRawList.associate { m ->
             val label = buildLabel(
                 m.firstNonBlank("id")?.numToCleanString(),
@@ -327,7 +304,6 @@ class SpeseRepository(
             label to (m.firstNonBlank("tipo_movimento", "TIPO_MOVIMENTO") ?: "uscita")
         }
 
-        // ── UTC entities ──────────────────────────────────────────────────────
         val utcEntities = utcRowsList.mapNotNull { m ->
             val utente         = m.firstNonBlank("id_utente", "utenza", "ID_UTENTE")?.trim()
             val tipologia      = m.firstNonBlank("id_tipologia", "tipologia", "ID_TIPOLOGIA")?.trim()
