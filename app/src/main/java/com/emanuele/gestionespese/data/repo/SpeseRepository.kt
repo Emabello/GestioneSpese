@@ -21,9 +21,8 @@ import com.emanuele.gestionespese.data.local.sottoKey
 import com.emanuele.gestionespese.data.local.utcKey
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.data.remote.SupabaseApi
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.supervisorScope
 
 /**
  * Repository per spese e lookup. Dipende da [SupabaseApi], [LookupDao] e [SpesaDao].
@@ -74,12 +73,8 @@ class SpeseRepository(
      * @param utente ID dell'utente.
      */
     suspend fun syncAll(utente: String) {
-        coroutineScope {
-            val dSpese   = async { syncSpese(utente) }
-            val dLookups = async { refreshLookupsFromRemoteAndSave(utenteId = utente) }
-            dSpese.await()
-            dLookups.await()
-        }
+        refreshLookupsFromRemoteAndSave(utenteId = utente)
+        syncSpese(utente)
     }
 
     // ── Scrittura (remote + aggiorna Room) ───────────────────────────────────
@@ -171,24 +166,6 @@ class SpeseRepository(
 
     // ── Lookup da remoto ──────────────────────────────────────────────────────
 
-    /** Scarica e filtra i tipi di movimento dal backend. */
-    private suspend fun getTipi(): List<String> {
-        val rows: List<Map<String, Any?>> = api.getTipi().data ?: emptyList()
-        return rows
-            .filter { it.isActiveDefaultTrue() }
-            .mapNotNull {
-                buildLabel(
-                    it.firstNonBlank("id")?.numToCleanString(),
-                    it.firstNonBlank("descrizione", "nome", "label")
-                )
-            }
-            .distinct().sorted()
-    }
-
-    /** Scarica i tipi raw (mappa JSON) per estrarre `tipo_movimento`. */
-    private suspend fun getTipiRaw(): List<Map<String, Any?>> =
-        api.getTipi().data ?: emptyList()
-
     /** Scarica e filtra le categorie attive dal backend. */
     private suspend fun getCategorie(): List<String> {
         val rows: List<CategoriaRow> = api.getCategorie().data ?: emptyList()
@@ -274,14 +251,19 @@ class SpeseRepository(
 
     /**
      * Scarica tutte le lookup dal backend in parallelo e aggiorna il DB locale.
-     * Le 6 chiamate API (tipi, tipiRaw, categorie, sottocategorie, conti, UTC)
-     * vengono lanciate in parallelo con [async] per minimizzare la latenza.
+     * Le 5 chiamate API (tipi+tipiRaw unificate, categorie, sottocategorie, conti, UTC)
+     * vengono lanciate in parallelo con [supervisorScope] + [async]: il fallimento di
+     * una chiamata non cancella le altre. Se tutte falliscono viene lanciata [java.io.IOException].
      *
      * @param utenteId ID dell'utente per filtrare i conti.
      */
     suspend fun refreshLookupsFromRemoteAndSave(utenteId: String? = null) {
 
-        // ── Lancia tutte le 6 chiamate API in parallelo ───────────────────────
+        // ── Lancia le chiamate API in parallelo con supervisorScope ───────────
+        // supervisorScope: il fallimento di un figlio non cancella i fratelli.
+        // Ogni async isola la propria eccezione con runCatching → emptyList di default.
+        // La chiamata a tipologia è unica: i dati raw vengono riutilizzati per
+        // costruire sia la lista etichettata (tipiList) sia la mappa (tipiRawList).
         val tipiList:      List<String>
         val categorieList: List<String>
         val sottoList:     List<SottoCatItem>
@@ -289,20 +271,34 @@ class SpeseRepository(
         val utcRowsList:   List<Map<String, Any?>>
         val tipiRawList:   List<Map<String, Any?>>
 
-        coroutineScope {
-            val dTipi      = async { getTipi() }
-            val dCategorie = async { getCategorie() }
-            val dSotto     = async { getSottocategorie() }
-            val dConti     = async { getConti(utenteId) }
-            val dUtcRows   = async { api.getUtcs().data ?: emptyList<Map<String, Any?>>() }
-            val dTipiRaw   = async { getTipiRaw() }
+        supervisorScope {
+            val dTipiRaw   = async { runCatching { api.getTipi().data ?: emptyList<Map<String, Any?>>() }.getOrDefault(emptyList()) }
+            val dCategorie = async { runCatching { getCategorie() }.getOrDefault(emptyList()) }
+            val dSotto     = async { runCatching { getSottocategorie() }.getOrDefault(emptyList()) }
+            val dConti     = async { runCatching { getConti(utenteId) }.getOrDefault(emptyList()) }
+            val dUtcRows   = async { runCatching { api.getUtcs().data ?: emptyList<Map<String, Any?>>() }.getOrDefault(emptyList()) }
 
-            tipiList      = dTipi.await()
+            val rawRows    = dTipiRaw.await()
+            tipiRawList   = rawRows
+            tipiList      = rawRows
+                .filter { it.isActiveDefaultTrue() }
+                .mapNotNull {
+                    buildLabel(
+                        it.firstNonBlank("id")?.numToCleanString(),
+                        it.firstNonBlank("descrizione", "nome", "label")
+                    )
+                }
+                .distinct().sorted()
+
             categorieList = dCategorie.await()
             sottoList     = dSotto.await()
             contiList     = dConti.await()
             utcRowsList   = dUtcRows.await()
-            tipiRawList   = dTipiRaw.await()
+        }
+
+        // Se tutte le chiamate sono fallite segnala l'errore al ViewModel
+        if (tipiList.isEmpty() && categorieList.isEmpty() && contiList.isEmpty() && utcRowsList.isEmpty()) {
+            throw java.io.IOException("Tutte le chiamate API di lookup sono fallite (timeout o rete assente)")
         }
 
 
