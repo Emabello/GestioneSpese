@@ -120,17 +120,27 @@ class LoginActivity : FragmentActivity() {
             .setNegativeButtonText("Usa password")
             .build()
 
-        // ── Condizione pulsante biometrico ────────────────────────────────────
-        val canShowBiometricButton = app.biometricEnabled &&
-                app.sessionActive &&
-                BiometricManager.from(this).canAuthenticate(
-                    BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                            BiometricManager.Authenticators.BIOMETRIC_WEAK
-                ) == BiometricManager.BIOMETRIC_SUCCESS
+        // ── Condizione pulsante biometrico — ricalcolata ad ogni onResume ────
+        val deviceCanUseBiometric = BiometricManager.from(this).canAuthenticate(
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    BiometricManager.Authenticators.BIOMETRIC_WEAK
+        ) == BiometricManager.BIOMETRIC_SUCCESS
+
+        var canShowBiometricButton by mutableStateOf(
+            app.biometricEnabled && app.sessionActive && deviceCanUseBiometric
+        )
 
         // ── Stati dialog primo accesso ────────────────────────────────────────
         var showBiometricDialog by mutableStateOf(false)
         var pendingApp          by mutableStateOf<MyApp?>(null)
+
+        // Aggiorna la visibilità del pulsante biometrico ogni volta che l'Activity torna in primo piano
+        // (es. l'utente ha appena disabilitato la biometria nelle impostazioni e preme indietro)
+        lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onResume(owner: androidx.lifecycle.LifecycleOwner) {
+                canShowBiometricButton = app.biometricEnabled && app.sessionActive && deviceCanUseBiometric
+            }
+        })
 
         setContent {
             GestioneSpeseTheme {

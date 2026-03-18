@@ -49,6 +49,9 @@ class MyApp : Application() {
     /** `true` se esiste una sessione attiva (utente loggato). */
     var sessionActive: Boolean = false
 
+    /** `true` se la modalità sviluppatore è abilitata (persiste tra i riavvii). */
+    var devModeEnabled: Boolean = false
+
     override fun onCreate() {
         super.onCreate()
 
@@ -59,7 +62,8 @@ class MyApp : Application() {
         currentGoogleLinked = prefs.getBoolean("google_linked", false)
         biometricEnabled    = prefs.getBoolean("biometric_enabled", false)
         biometricAsked      = prefs.getBoolean("biometric_asked", false)
-        sessionActive    = prefs.getBoolean("session_active", false)
+        sessionActive       = prefs.getBoolean("session_active", false)
+        devModeEnabled      = prefs.getBoolean("dev_mode_enabled", false)
 
         db = Room.databaseBuilder(
             applicationContext,
@@ -107,6 +111,18 @@ class MyApp : Application() {
         prefs.edit()
             .putBoolean("biometric_enabled", enabled)
             .putBoolean("biometric_asked", true)
+            .apply()
+    }
+
+    /**
+     * Salva la preferenza della modalità sviluppatore.
+     *
+     * @param enabled `true` per abilitare la modalità sviluppatore.
+     */
+    fun saveDevModeEnabled(enabled: Boolean) {
+        devModeEnabled = enabled
+        prefs.edit()
+            .putBoolean("dev_mode_enabled", enabled)
             .apply()
     }
 

@@ -48,14 +48,14 @@ class StartActivity : FragmentActivity() {
             return
         }
 
-        // Sessione presente + biometria abilitata → chiedi biometria
-        if (app.biometricEnabled) {
+        // Sessione presente + biometria abilitata + sessione attiva → chiedi biometria
+        if (app.biometricEnabled && app.sessionActive) {
             showBiometricPrompt(
                 onSuccess = { goToMain() },
                 onFallback = { goToLogin() }
             )
         } else {
-            // Sessione presente senza biometria → vai diretto
+            // Sessione presente senza biometria (o biometria disabilitata) → vai diretto
             goToMain()
         }
     }

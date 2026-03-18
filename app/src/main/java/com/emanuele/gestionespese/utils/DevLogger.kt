@@ -14,13 +14,20 @@ package com.emanuele.gestionespese.utils
 
 import androidx.compose.runtime.mutableStateListOf
 
+/** Singola voce di log con timestamp, tag e messaggio. */
+data class LogEntry(
+    val timestamp: Long,
+    val tag: String,
+    val message: String
+)
+
 /** Singleton logger in-memory per il pannello sviluppatore. */
 object DevLogger {
     private const val MAX_LINES = 200
-    private val _logs = mutableStateListOf<String>()
+    private val _logs = mutableStateListOf<LogEntry>()
 
     /** Lista immutabile dei log correnti, in ordine inverso (più recente prima). */
-    val logs: List<String> get() = _logs
+    val logs: List<LogEntry> get() = _logs
 
     /**
      * Aggiunge un'entry al log e la stampa anche in Logcat.
@@ -29,9 +36,8 @@ object DevLogger {
      * @param msg  Testo del messaggio.
      */
     fun log(tag: String, msg: String) {
-        val entry = "[$tag] $msg"
         android.util.Log.d(tag, msg)
-        _logs.add(0, entry)
+        _logs.add(0, LogEntry(timestamp = System.currentTimeMillis(), tag = tag, message = msg))
         if (_logs.size > MAX_LINES) _logs.removeLastOrNull()
     }
 
