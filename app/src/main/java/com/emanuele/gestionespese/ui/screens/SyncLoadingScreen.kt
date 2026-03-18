@@ -1,3 +1,10 @@
+/**
+ * SyncLoadingScreen.kt
+ *
+ * Schermata di caricamento iniziale mostrata durante la sincronizzazione dei dati
+ * al primo avvio o dopo il login. Mostra un'animazione di progresso e gestisce
+ * gli errori di rete con un pulsante di retry.
+ */
 package com.emanuele.gestionespese.ui.screens
 
 import androidx.compose.animation.core.*

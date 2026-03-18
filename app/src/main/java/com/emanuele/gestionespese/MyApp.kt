@@ -1,3 +1,10 @@
+/**
+ * MyApp.kt
+ *
+ * Singleton [Application] dell'app. Viene creato prima di qualsiasi Activity e
+ * mantiene le dipendenze globali (database Room, client Retrofit) e la sessione
+ * utente corrente in memoria e in SharedPreferences.
+ */
 package com.emanuele.gestionespese
 
 import android.app.Application
@@ -8,21 +15,38 @@ import com.emanuele.gestionespese.data.local.AppDatabase
 import com.emanuele.gestionespese.data.remote.RetrofitProvider
 import com.emanuele.gestionespese.data.remote.SupabaseApi
 
+/**
+ * Entry point dell'applicazione. Inizializza Room e Retrofit all'avvio e
+ * gestisce la sessione utente tramite SharedPreferences.
+ */
 class MyApp : Application() {
 
+    /** Istanza del database Room, disponibile dopo [onCreate]. */
     lateinit var db: AppDatabase
         private set
 
+    /** Client API Retrofit, disponibile dopo [onCreate]. */
     lateinit var api: SupabaseApi
         private set
 
     private lateinit var prefs: SharedPreferences
 
+    /** Nome visualizzato dell'utente loggato, o `null` se non autenticato. */
     var currentUserLabel: String? = null
+
+    /** ID numerico dell'utente loggato, o `null` se non autenticato. */
     var currentUserId: Int? = null
+
+    /** `true` se l'utente ha collegato un account Google. */
     var currentGoogleLinked: Boolean = false
+
+    /** `true` se l'autenticazione biometrica è abilitata. */
     var biometricEnabled: Boolean = false
+
+    /** `true` se all'utente è già stato chiesto di attivare la biometria. */
     var biometricAsked: Boolean = false
+
+    /** `true` se esiste una sessione attiva (utente loggato). */
     var sessionActive: Boolean = false
 
     override fun onCreate() {
@@ -52,6 +76,13 @@ class MyApp : Application() {
         api = retrofit.create(SupabaseApi::class.java)
     }
 
+    /**
+     * Persiste i dati di sessione dopo il login.
+     *
+     * @param userLabel    Nome visualizzato dell'utente.
+     * @param userId       ID numerico dell'utente.
+     * @param googleLinked `true` se l'account Google è collegato.
+     */
     fun saveSession(userLabel: String, userId: Int, googleLinked: Boolean) {
         currentUserLabel    = userLabel
         currentUserId       = userId
@@ -65,6 +96,11 @@ class MyApp : Application() {
             .apply()
     }
 
+    /**
+     * Salva la preferenza biometrica dell'utente.
+     *
+     * @param enabled `true` per abilitare il login biometrico.
+     */
     fun saveBiometricEnabled(enabled: Boolean) {
         biometricEnabled = enabled
         biometricAsked   = true
@@ -74,6 +110,10 @@ class MyApp : Application() {
             .apply()
     }
 
+    /**
+     * Cancella la sessione corrente (logout).
+     * Rimuove tutti i dati utente dalla memoria e dalle SharedPreferences.
+     */
     fun clearSession() {
         currentUserLabel    = null
         currentUserId       = null

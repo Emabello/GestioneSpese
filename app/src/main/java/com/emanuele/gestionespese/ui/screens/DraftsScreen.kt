@@ -1,3 +1,13 @@
+/**
+ * DraftsScreen.kt
+ *
+ * Schermata delle bozze di movimenti bancari catturate automaticamente dalle
+ * notifiche push di Webank. Permette di visualizzare, selezionare e eliminare
+ * le bozze in attesa di validazione manuale.
+ *
+ * Supporta la selezione multipla tramite long-press e un pulsante di eliminazione
+ * collettiva. Include anche un pulsante di test per inserire bozze fittizie in debug.
+ */
 package com.emanuele.gestionespese.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi

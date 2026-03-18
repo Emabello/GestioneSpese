@@ -1,3 +1,13 @@
+/**
+ * ConfigScreen.kt
+ *
+ * Schermata di configurazione delle lookup tables: tipi, categorie, conti
+ * e sottocategorie. Permette all'utente di visualizzare i dati sincronizzati
+ * e forzare una risincronizzazione manuale dal backend.
+ *
+ * I dati visualizzati sono quelli presenti nel DB locale Room, aggiornati
+ * dall'ultima sincronizzazione avvenuta.
+ */
 package com.emanuele.gestionespese.ui.screens
 
 import androidx.compose.foundation.layout.*

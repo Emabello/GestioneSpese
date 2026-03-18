@@ -1,3 +1,8 @@
+/**
+ * TotaleEntrateWidget.kt
+ *
+ * Widget della dashboard che mostra il totale delle entrate nel periodo selezionato.
+ */
 package com.emanuele.gestionespese.ui.components.widgets
 
 import androidx.compose.material3.MaterialTheme

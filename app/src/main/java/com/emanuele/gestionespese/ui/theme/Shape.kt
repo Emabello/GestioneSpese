@@ -1,3 +1,9 @@
+/**
+ * Shape.kt
+ *
+ * Definizione dei corner radius Material 3 usati nell'app.
+ * Fornisce forme arrotondate uniformi per card, bottoni e dialoghi.
+ */
 package com.emanuele.gestionespese.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape

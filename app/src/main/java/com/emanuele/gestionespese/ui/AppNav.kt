@@ -1,3 +1,13 @@
+/**
+ * AppNav.kt
+ *
+ * Configurazione della navigazione principale dell'app tramite Jetpack Navigation Compose.
+ * Definisce:
+ * - [Routes]: costanti per le destinazioni di navigazione
+ * - [MainTab]: tab della barra di navigazione inferiore (Home, Riepilogo, Notifiche, Impostazioni)
+ * - [AppNav]: composable root con il grafo di navigazione completo
+ * - [MainScreen]: schermata con la bottom bar e il contenuto principale
+ */
 package com.emanuele.gestionespese.ui
 
 import androidx.compose.foundation.layout.Box
@@ -27,7 +37,6 @@ import androidx.navigation.navArgument
 import com.emanuele.gestionespese.MyApp
 import com.emanuele.gestionespese.data.repo.DashboardRepository
 import com.emanuele.gestionespese.data.repo.SpesaDraftRepository
-import com.emanuele.gestionespese.ui.drafts.DraftsVmFactory
 import com.emanuele.gestionespese.ui.drafts.DraftsViewModel
 import com.emanuele.gestionespese.ui.screens.ConfigScreen
 import com.emanuele.gestionespese.ui.screens.DashboardEditScreen
@@ -154,7 +163,7 @@ fun MainTabScreen(
     val context = LocalContext.current
     val db      = remember { (context.applicationContext as MyApp).db }
     val repo    = remember { SpesaDraftRepository(db.spesaDraftDao()) }
-    val vmDraft: DraftsViewModel = viewModel(factory = DraftsVmFactory(repo))
+    val vmDraft: DraftsViewModel = viewModel(factory = DraftsViewModel.factory(repo))
 
     Scaffold(
         bottomBar = {

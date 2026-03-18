@@ -1,3 +1,14 @@
+/**
+ * HomeScreen.kt
+ *
+ * Schermata principale dell'app: lista completa dei movimenti finanziari dell'utente.
+ * Funzionalità principali:
+ * - Ricerca full-text su descrizione, categoria e sottocategoria
+ * - Filtri per tipo, categoria, conto e periodo temporale
+ * - Ordinamento per data, importo e descrizione
+ * - Swipe-to-delete e tap per modifica
+ * - Pull-to-refresh per la sincronizzazione manuale
+ */
 package com.emanuele.gestionespese.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility

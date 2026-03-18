@@ -1,3 +1,14 @@
+/**
+ * StartActivity.kt
+ *
+ * Splash screen e punto di ingresso dell'app. Gestisce due percorsi:
+ * 1. **Sessione attiva + biometria abilitata** → mostra il prompt biometrico;
+ *    al successo naviga a [MainActivity], al fallimento a [LoginActivity].
+ * 2. **Nessuna sessione attiva** → naviga direttamente a [LoginActivity].
+ *
+ * Se la biometria non è stata ancora configurata, reindirizza a [MainActivity]
+ * che proporrà la configurazione al primo accesso.
+ */
 package com.emanuele.gestionespese
 
 import android.content.Intent

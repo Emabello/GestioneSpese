@@ -1,3 +1,10 @@
+/**
+ * WidgetBase.kt
+ *
+ * Composable base condiviso da tutti i widget della dashboard.
+ * [WidgetCard] fornisce il contenitore visivo comune (ElevatedCard con titolo
+ * e padding uniformi) in cui ogni widget inserisce il proprio contenuto.
+ */
 package com.emanuele.gestionespese.ui.components.widgets
 
 import androidx.compose.foundation.layout.*
@@ -6,6 +13,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+/**
+ * Contenitore visivo comune per tutti i widget della dashboard.
+ *
+ * @param title    Titolo del widget mostrato in cima alla card.
+ * @param modifier Modifier per personalizzare dimensioni e posizione.
+ * @param content  Contenuto del widget, passato come lambda composable.
+ */
 @Composable
 fun WidgetCard(
     title: String,

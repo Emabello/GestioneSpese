@@ -1,3 +1,10 @@
+/**
+ * Color.kt
+ *
+ * Palette colori dell'app. Definisce i colori brand (teal elegante),
+ * i colori semantici (entrate in verde, uscite in rosso) e i neutri
+ * usati nei temi chiaro e scuro.
+ */
 package com.emanuele.gestionespese.ui.theme
 
 import androidx.compose.ui.graphics.Color

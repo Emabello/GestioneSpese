@@ -1,3 +1,14 @@
+/**
+ * LoginActivity.kt
+ *
+ * Schermata di login dell'app. Supporta due modalità di autenticazione:
+ * 1. **Credenziali** (username + password) tramite [LoginViewModel.performLogin]
+ * 2. **Google Sign-In** tramite Credential Manager API e [LoginViewModel.performGoogleLogin]
+ *
+ * Al login riuscito, salva la sessione in [MyApp] e naviga a [MainActivity].
+ * Include la gestione del collegamento/scollegamento account Google per utenti
+ * già autenticati con credenziali.
+ */
 package com.emanuele.gestionespese
 
 import android.content.ClipData

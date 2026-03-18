@@ -1,3 +1,10 @@
+/**
+ * WidgetRenderer.kt
+ *
+ * Composable dispatcher che instrada ogni [WidgetConfig] al widget specifico
+ * corrispondente al suo [WidgetType]. Centralizza la logica di selezione
+ * del composable da renderizzare in base al tipo.
+ */
 package com.emanuele.gestionespese.ui.components.widgets
 
 import androidx.compose.runtime.Composable

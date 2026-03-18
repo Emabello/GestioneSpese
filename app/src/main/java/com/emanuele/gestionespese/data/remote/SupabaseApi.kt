@@ -1,3 +1,14 @@
+/**
+ * SupabaseApi.kt
+ *
+ * Interfaccia Retrofit per tutte le chiamate al backend Google Apps Script.
+ * Nonostante il nome (legacy da Supabase), il backend è ora un Apps Script
+ * che espone un endpoint GET/POST su `exec`.
+ *
+ * Tutte le chiamate sono `suspend` e ritornano [ApiEnvelope] con il tipo
+ * di risposta appropriato. Gli errori di rete lanciano eccezioni gestite
+ * dal repository chiamante.
+ */
 package com.emanuele.gestionespese.data.remote
 
 import com.emanuele.gestionespese.data.model.*

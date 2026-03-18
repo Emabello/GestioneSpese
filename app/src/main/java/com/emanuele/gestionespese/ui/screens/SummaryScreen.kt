@@ -1,3 +1,13 @@
+/**
+ * SummaryScreen.kt
+ *
+ * Schermata di riepilogo con la dashboard personalizzabile a widget.
+ * Visualizza i widget configurati dall'utente in una griglia a 2 colonne,
+ * ognuno calcolato sul periodo selezionato (mese corrente, ultimi 30 giorni, anno).
+ *
+ * I widget disponibili sono definiti in [WidgetConfig] e renderizzati da [WidgetRenderer].
+ * La dashboard è modificabile dalla schermata [DashboardEditScreen].
+ */
 package com.emanuele.gestionespese.ui.screens
 
 import androidx.compose.animation.*

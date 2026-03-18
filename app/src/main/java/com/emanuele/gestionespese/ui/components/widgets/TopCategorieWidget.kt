@@ -1,3 +1,9 @@
+/**
+ * TopCategorieWidget.kt
+ *
+ * Widget della dashboard che mostra la classifica delle categorie per importo
+ * totale di uscite nel periodo selezionato, limitata alle prime [topN] voci.
+ */
 package com.emanuele.gestionespese.ui.components.widgets
 
 import androidx.compose.foundation.layout.*

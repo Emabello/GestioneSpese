@@ -1,3 +1,13 @@
+/**
+ * WidgetExtensions.kt
+ *
+ * Extension functions su [SpesaView], [List<SpesaView>] e [WidgetPeriodo] usate
+ * dai widget della dashboard per filtrare e classificare i movimenti.
+ *
+ * - [filteredByPeriodo]: filtra la lista in base al periodo temporale selezionato
+ * - [isEntrata] / [isUscita]: classificazione del tipo di movimento
+ * - [WidgetPeriodo.label]: etichetta breve per la UI
+ */
 package com.emanuele.gestionespese.ui.components.widgets
 
 import com.emanuele.gestionespese.data.model.SpesaView
@@ -5,6 +15,12 @@ import com.emanuele.gestionespese.data.model.WidgetPeriodo
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+/**
+ * Prova a parsare una stringa data nei formati `"yyyy-MM-dd"` e `"dd/MM/yyyy"`.
+ *
+ * @param data Stringa data da parsare, o `null`.
+ * @return [LocalDate] parsato, o `null` se la stringa non è riconoscibile.
+ */
 private fun parseDataFlessibile(data: String?): LocalDate? {
     if (data.isNullOrBlank()) return null
     return try {
@@ -18,6 +34,12 @@ private fun parseDataFlessibile(data: String?): LocalDate? {
     }
 }
 
+/**
+ * Filtra la lista di movimenti in base al [periodo] selezionato.
+ *
+ * @param periodo Intervallo temporale ([WidgetPeriodo]).
+ * @return Sottolista dei movimenti nel periodo indicato.
+ */
 fun List<SpesaView>.filteredByPeriodo(periodo: WidgetPeriodo): List<SpesaView> {
     val today = LocalDate.now()
     return when (periodo) {
@@ -39,9 +61,14 @@ fun List<SpesaView>.filteredByPeriodo(periodo: WidgetPeriodo): List<SpesaView> {
     }
 }
 
+/** `true` se il movimento è un'entrata (in base a `tipo_movimento`). */
 fun SpesaView.isEntrata(): Boolean =
     tipo_movimento?.equals("entrata", ignoreCase = true) == true
 
+/**
+ * `true` se il movimento è un'uscita. Usa `tipo_movimento` se disponibile;
+ * altrimenti inferisce dal campo `tipo` escludendo le entrate.
+ */
 fun SpesaView.isUscita(): Boolean {
     // Se tipo_movimento è presente usalo
     if (tipo_movimento != null) {
@@ -51,6 +78,7 @@ fun SpesaView.isUscita(): Boolean {
             tipo?.contains("entrata", ignoreCase = true) != true
 }
 
+/** Restituisce l'etichetta breve del periodo per la UI (es. `"mese"`, `"30gg"`, `"anno"`). */
 fun WidgetPeriodo.label(): String = when (this) {
     WidgetPeriodo.MESE_CORRENTE    -> "mese"
     WidgetPeriodo.ULTIMI_30_GIORNI -> "30gg"

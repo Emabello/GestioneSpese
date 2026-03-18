@@ -1,3 +1,12 @@
+/**
+ * MainActivity.kt
+ *
+ * Activity principale dell'app, raggiunta dopo autenticazione riuscita.
+ * Crea [SpeseRepository] e [SpeseViewModel], imposta il contenuto Compose
+ * con [AppNav] e avvia la sincronizzazione iniziale dei dati tramite [SpeseViewModel.syncAll].
+ *
+ * Se la sessione non è valida (nessun utente loggato), reindirizza a [LoginActivity].
+ */
 package com.emanuele.gestionespese
 
 import android.content.Intent
