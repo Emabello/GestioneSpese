@@ -38,7 +38,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +49,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
@@ -140,7 +142,7 @@ fun SettingsScreen(vm: SpeseViewModel, onNavigateToConfig: () -> Unit) {
 
     // Dev mode
     var devTapCount    by remember { mutableIntStateOf(0) }
-    var devModeEnabled by rememberSaveable { mutableStateOf(false) }
+    var devModeEnabled by remember { mutableStateOf(app.devModeEnabled) }
     var showDevLogs    by remember { mutableStateOf(false) }
     val devLogs        = DevLogger.logs
 
@@ -220,6 +222,13 @@ fun SettingsScreen(vm: SpeseViewModel, onNavigateToConfig: () -> Unit) {
 
     // ── Dialog log sviluppatore ──────────────────────────────────────────────
     if (showDevLogs) {
+        var selectedLogTag by remember { mutableStateOf<String?>(null) }
+        val timeFormatter  = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+        val distinctTags   = remember(devLogs) { devLogs.map { it.tag }.distinct().sorted() }
+        val filteredLogs   = remember(devLogs, selectedLogTag) {
+            if (selectedLogTag == null) devLogs else devLogs.filter { it.tag == selectedLogTag }
+        }
+
         AlertDialog(
             onDismissRequest = { showDevLogs = false },
             modifier = Modifier.fillMaxHeight(0.85f),
@@ -230,38 +239,63 @@ fun SettingsScreen(vm: SpeseViewModel, onNavigateToConfig: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Log sviluppatore")
-                    TextButton(onClick = { DevLogger.clear() }) {
+                    TextButton(onClick = { DevLogger.clear(); selectedLogTag = null }) {
                         Text("Pulisci", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             },
             text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    if (devLogs.isEmpty()) {
-                        Text(
-                            "Nessun log disponibile.\nEsegui operazioni per vedere i log qui.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        devLogs.forEach { line ->
-                            val color = when {
-                                line.contains("ERROR", ignoreCase = true)    -> MaterialTheme.colorScheme.error
-                                line.contains("OK", ignoreCase = true)       -> Brand
-                                line.contains("NOTIFICA", ignoreCase = true) -> MaterialTheme.colorScheme.tertiary
-                                else -> MaterialTheme.colorScheme.onSurface
-                            }
-                            Text(
-                                text     = line,
-                                style    = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                                color    = color,
-                                modifier = Modifier.padding(vertical = 2.dp)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // ── Filtri per tag ───────────────────────────────────────
+                    if (distinctTags.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FilterChip(
+                                selected = selectedLogTag == null,
+                                onClick  = { selectedLogTag = null },
+                                label    = { Text("Tutti", style = MaterialTheme.typography.labelSmall) }
                             )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            distinctTags.forEach { tag ->
+                                FilterChip(
+                                    selected = selectedLogTag == tag,
+                                    onClick  = { selectedLogTag = if (selectedLogTag == tag) null else tag },
+                                    label    = { Text(tag, style = MaterialTheme.typography.labelSmall) }
+                                )
+                            }
+                        }
+                    }
+                    // ── Lista log ────────────────────────────────────────────
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        if (filteredLogs.isEmpty()) {
+                            Text(
+                                "Nessun log disponibile.\nEsegui operazioni per vedere i log qui.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            filteredLogs.forEach { entry ->
+                                val color = when {
+                                    entry.message.contains("ERROR", ignoreCase = true) -> MaterialTheme.colorScheme.error
+                                    entry.message.contains("OK", ignoreCase = true)    -> Brand
+                                    entry.tag == "NOTIFICA"                            -> MaterialTheme.colorScheme.tertiary
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                }
+                                Text(
+                                    text  = "${timeFormatter.format(Date(entry.timestamp))}  [${entry.tag}]  ${entry.message}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = color,
+                                    modifier = Modifier.padding(vertical = 2.dp)
+                                )
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            }
                         }
                     }
                 }
@@ -345,7 +379,11 @@ fun SettingsScreen(vm: SpeseViewModel, onNavigateToConfig: () -> Unit) {
                         )
                         .clickable {
                             devTapCount++
-                            if (devTapCount >= 7) { devModeEnabled = true; devTapCount = 0 }
+                            if (devTapCount >= 7) {
+                                devModeEnabled = true
+                                app.saveDevModeEnabled(true)
+                                devTapCount = 0
+                            }
                         }
                         .padding(16.dp)
                 ) {
@@ -775,7 +813,7 @@ fun SettingsScreen(vm: SpeseViewModel, onNavigateToConfig: () -> Unit) {
 
                             // Disattiva
                             TextButton(
-                                onClick  = { devModeEnabled = false; devTapCount = 0 },
+                                onClick  = { devModeEnabled = false; app.saveDevModeEnabled(false); devTapCount = 0 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(

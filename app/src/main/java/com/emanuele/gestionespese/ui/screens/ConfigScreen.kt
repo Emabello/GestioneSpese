@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.MyApp
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.ui.theme.Brand
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 
 // ── Tabelle disponibili ───────────────────────────────────────────────
@@ -67,6 +69,14 @@ fun ConfigScreen(onBack: () -> Unit) {
     var allTipologie    by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
     var allSottocategorie by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
 
+    // Dati UC e UTCS caricati per la logica di cascade (non visibili come tab)
+    var allUc   by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
+    var allUtcs by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
+
+    // Messaggio cascade (quante voci sono state disattivate)
+    var cascadeMsg by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
     // ── Carica records ───────────────────────────────────────────────
     fun loadRecords() {
         scope.launch {
@@ -93,23 +103,92 @@ fun ConfigScreen(onBack: () -> Unit) {
         }
     }
 
-    // Carica dati ausiliari per i dialog
+    // Carica dati ausiliari per i dialog e per la cascade
     fun loadAuxData() {
         scope.launch {
             try {
-                allCategorie      = api.getCategorie().data
-                    ?.map { mapOf("id" to it.id, "descrizione" to it.descrizione) }
-                    ?: emptyList()
-                allConti          = api.getConti().data ?: emptyList()
-                allTipologie      = api.getTipi().data ?: emptyList()
-                allSottocategorie = api.getSottocategorie().data ?: emptyList()
+                val categorieDeferred      = async { api.getCategorie().data?.map { mapOf("id" to it.id, "descrizione" to it.descrizione) } ?: emptyList() }
+                val contiDeferred          = async { api.getConti().data ?: emptyList() }
+                val tipologieDeferred      = async { api.getTipi().data ?: emptyList() }
+                val sottocDeferred         = async { api.getSottocategorie().data ?: emptyList() }
+                val ucDeferred             = async { api.getUc(utente = currentUtente).data ?: emptyList() }
+                val utcsDeferred           = async {
+                    api.getUtcs().data
+                        ?.filter { r -> java.lang.String(r["id_utente"]?.toString() ?: "").trim() == currentUtente }
+                        ?: emptyList()
+                }
+                allCategorie      = categorieDeferred.await()
+                allConti          = contiDeferred.await()
+                allTipologie      = tipologieDeferred.await()
+                allSottocategorie = sottocDeferred.await()
+                allUc             = ucDeferred.await()
+                allUtcs           = utcsDeferred.await()
             } catch (_: Exception) { }
+        }
+    }
+
+    // Disattiva in cascata le voci correlate quando si disattiva un record
+    fun cascadeDeactivate(table: ConfigTable, recordId: Int) {
+        scope.launch {
+            try {
+                fun normalizeId(v: Any?): String =
+                    (v as? Double)?.toInt()?.toString() ?: v?.toString() ?: ""
+
+                val idStr = recordId.toString()
+
+                // Determina quali record UC/UTCS vanno disattivati
+                val toDeactivateUtcs = when (table) {
+                    ConfigTable.TIPOLOGIA     -> allUtcs.filter { normalizeId(it["id_tipologia"])     == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                    ConfigTable.CATEGORIA     -> allUtcs.filter { normalizeId(it["id_categoria"])     == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                    ConfigTable.SOTTOCATEGORIA -> allUtcs.filter { normalizeId(it["id_sottocategoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                    else -> emptyList()
+                }
+                val toDeactivateSottocat = when (table) {
+                    ConfigTable.CATEGORIA -> allSottocategorie.filter { normalizeId(it["id_categoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                    else -> emptyList()
+                }
+                val toDeactivateUc = when (table) {
+                    ConfigTable.CONTO -> allUc.filter { normalizeId(it["id_conto"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                    else -> emptyList()
+                }
+
+                val totalCount = toDeactivateUtcs.size + toDeactivateSottocat.size + toDeactivateUc.size
+                if (totalCount == 0) return@launch
+
+                // Disattiva in parallelo
+                val jobs = mutableListOf<kotlinx.coroutines.Deferred<*>>()
+                toDeactivateUtcs.forEach { r ->
+                    val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
+                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UTCS.resource, id = rid, data = mapOf("attivo" to false))) }
+                }
+                toDeactivateSottocat.forEach { r ->
+                    val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
+                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.SOTTOCATEGORIA.resource, id = rid, data = mapOf("attivo" to false))) }
+                }
+                toDeactivateUc.forEach { r ->
+                    val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
+                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UC.resource, id = rid, data = mapOf("attivo" to false))) }
+                }
+                jobs.awaitAll()
+
+                cascadeMsg = "$totalCount ${if (totalCount == 1) "voce correlata disattivata" else "voci correlate disattivate"}"
+                loadAuxData()
+            } catch (e: Exception) {
+                errorMsg = e.message
+            }
         }
     }
 
     LaunchedEffect(selectedTable) {
         loadRecords()
         loadAuxData()
+    }
+
+    LaunchedEffect(cascadeMsg) {
+        cascadeMsg?.let {
+            snackbarHostState.showSnackbar(it)
+            cascadeMsg = null
+        }
     }
 
     // ── Dialog Aggiungi / Modifica ────────────────────────────────────
@@ -207,7 +286,8 @@ fun ConfigScreen(onBack: () -> Unit) {
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Aggiungi", tint = androidx.compose.ui.graphics.Color.White)
             }
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -242,15 +322,17 @@ fun ConfigScreen(onBack: () -> Unit) {
                     expanded        = tableExpanded,
                     onDismissRequest = { tableExpanded = false }
                 ) {
-                    ConfigTable.entries.forEach { table ->
-                        DropdownMenuItem(
-                            text    = { Text(table.label) },
-                            onClick = {
-                                selectedTable  = table
-                                tableExpanded  = false
-                            }
-                        )
-                    }
+                    ConfigTable.entries
+                        .filter { it != ConfigTable.UC && it != ConfigTable.UTCS }
+                        .forEach { table ->
+                            DropdownMenuItem(
+                                text    = { Text(table.label) },
+                                onClick = {
+                                    selectedTable  = table
+                                    tableExpanded  = false
+                                }
+                            )
+                        }
                 }
             }
 
@@ -310,6 +392,8 @@ fun ConfigScreen(onBack: () -> Unit) {
                                             data     = mapOf(attivoKey to newVal)
                                         )
                                     )
+                                    // Se si disattiva, propaga la disattivazione alle voci correlate
+                                    if (!newVal) cascadeDeactivate(selectedTable, id)
                                     loadRecords()
                                 } catch (e: Exception) {
                                     errorMsg = e.message
