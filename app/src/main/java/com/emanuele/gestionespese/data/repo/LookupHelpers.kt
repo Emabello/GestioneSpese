@@ -95,3 +95,15 @@ internal fun buildLabel(id: String?, descr: String?): String? {
     if (i.isBlank() && d.isBlank()) return null
     return if (i.isNotBlank() && d.isNotBlank()) "$i - $d" else d.ifBlank { i }
 }
+
+/** Campi calcolati via formula in Google Sheets: non devono mai essere scritti dall'app. */
+internal val FORMULA_PROTECTED_FIELDS: Set<String> = setOf(
+    "id_definizione", "id_definizione_attivo"
+)
+
+/**
+ * Rimuove dalla mappa i campi protetti (calcolati da formula lato Sheets).
+ * Da usare prima di ogni GenericInsertRequest / GenericUpdateRequest.
+ */
+internal fun Map<String, Any?>.stripFormulaFields(): Map<String, Any?> =
+    filterKeys { it.lowercase() !in FORMULA_PROTECTED_FIELDS }
