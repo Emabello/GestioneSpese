@@ -27,7 +27,6 @@ import androidx.navigation.navArgument
 import com.emanuele.gestionespese.MyApp
 import com.emanuele.gestionespese.data.repo.DashboardRepository
 import com.emanuele.gestionespese.data.repo.SpesaDraftRepository
-import com.emanuele.gestionespese.ui.drafts.DraftsVmFactory
 import com.emanuele.gestionespese.ui.drafts.DraftsViewModel
 import com.emanuele.gestionespese.ui.screens.ConfigScreen
 import com.emanuele.gestionespese.ui.screens.DashboardEditScreen
@@ -154,7 +153,7 @@ fun MainTabScreen(
     val context = LocalContext.current
     val db      = remember { (context.applicationContext as MyApp).db }
     val repo    = remember { SpesaDraftRepository(db.spesaDraftDao()) }
-    val vmDraft: DraftsViewModel = viewModel(factory = DraftsVmFactory(repo))
+    val vmDraft: DraftsViewModel = viewModel(factory = DraftsViewModel.factory(repo))
 
     Scaffold(
         bottomBar = {

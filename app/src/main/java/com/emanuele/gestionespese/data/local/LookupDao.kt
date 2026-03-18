@@ -3,6 +3,18 @@ package com.emanuele.gestionespese.data.local
 import androidx.room.*
 import com.emanuele.gestionespese.data.local.entities.*
 
+/**
+ * Coppia (categoria, sottocategoria) usata come proiezione nelle query Room
+ * per [LookupDao.getSottocategoriePairs].
+ *
+ * @property categoria     Nome della categoria padre.
+ * @property sottocategoria Nome della sottocategoria figlia.
+ */
+data class SottoCatPair(
+    val categoria: String,
+    val sottocategoria: String
+)
+
 @Dao
 interface LookupDao {
 

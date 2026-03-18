@@ -1,6 +1,7 @@
 package com.emanuele.gestionespese.ui.drafts
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.emanuele.gestionespese.data.local.entities.SpesaDraftEntity
 import com.emanuele.gestionespese.data.repo.SpesaDraftRepository
@@ -36,5 +37,15 @@ class DraftsViewModel(private val repo: SpesaDraftRepository) : ViewModel() {
             dedupKey = "TEST-$now-${Random.nextInt(0, 1_000_000)}"
         )
         repo.insertTest(entity)
+    }
+
+    companion object {
+        /** Factory per creare [DraftsViewModel] con il repository necessario. */
+        fun factory(repo: SpesaDraftRepository): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    DraftsViewModel(repo) as T
+            }
     }
 }

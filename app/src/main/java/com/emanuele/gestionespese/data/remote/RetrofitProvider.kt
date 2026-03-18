@@ -1,7 +1,7 @@
 package com.emanuele.gestionespese.data.remote
 
 import com.emanuele.gestionespese.BuildConfig
-import com.emanuele.gestionespese.ui.screens.DevLogger
+import com.emanuele.gestionespese.utils.DevLogger
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit

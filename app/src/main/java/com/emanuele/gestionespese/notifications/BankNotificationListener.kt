@@ -6,7 +6,7 @@ import android.util.Log
 import com.emanuele.gestionespese.BuildConfig
 import com.emanuele.gestionespese.MyApp
 import com.emanuele.gestionespese.data.local.entities.SpesaDraftEntity
-import com.emanuele.gestionespese.ui.screens.DevLogger
+import com.emanuele.gestionespese.utils.DevLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

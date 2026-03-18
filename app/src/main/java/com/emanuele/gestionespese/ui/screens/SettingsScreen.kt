@@ -48,6 +48,7 @@ import com.emanuele.gestionespese.data.model.LinkGoogleRequest
 import com.emanuele.gestionespese.data.model.UnlinkGoogleRequest
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
+import com.emanuele.gestionespese.utils.DevLogger
 import com.emanuele.gestionespese.utils.extractSubFromToken
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -55,22 +56,6 @@ import kotlinx.coroutines.launch
 
 private const val WEB_CLIENT_ID =
     "1058320885515-4sj57egqao1nr9l8unkbkuso1utggqe2.apps.googleusercontent.com"
-
-// ── DevLogger (invariato) ────────────────────────────────────────────────────
-object DevLogger {
-    private const val MAX_LINES = 200
-    private val _logs = mutableStateListOf<String>()
-    val logs: List<String> get() = _logs
-
-    fun log(tag: String, msg: String) {
-        val entry = "[$tag] $msg"
-        android.util.Log.d(tag, msg)
-        _logs.add(0, entry)
-        if (_logs.size > MAX_LINES) _logs.removeLastOrNull()
-    }
-
-    fun clear() = _logs.clear()
-}
 
 // ── Composable helper: SettingRow ────────────────────────────────────────────
 @Composable

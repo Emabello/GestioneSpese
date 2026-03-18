@@ -1,5 +1,24 @@
 package com.emanuele.gestionespese.data.repo
 
+import com.emanuele.gestionespese.data.model.SottoCatItem
+
+/**
+ * Aggregazione di tutte le lookup tables caricate dal database locale.
+ * Usata da [SpeseRepository.getLookupsFromDb] per restituire in un'unica
+ * struttura i dati necessari ai form dell'app.
+ *
+ * @property tipi           Lista dei tipi di spesa (es. "Uscita", "Entrata").
+ * @property categorie      Lista delle categorie disponibili.
+ * @property sottocategorie Lista di [SottoCatItem] con categoria e sottocategoria.
+ * @property conti          Lista dei conti correnti dell'utente.
+ */
+data class LookupsLocal(
+    val tipi: List<String>,
+    val categorie: List<String>,
+    val sottocategorie: List<SottoCatItem>,
+    val conti: List<String>
+)
+
 // Cerca il primo valore non-blank tra le chiavi indicate
 internal fun Map<String, Any?>.firstNonBlank(vararg keys: String): String? {
     for (k in keys) {
