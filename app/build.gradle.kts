@@ -6,6 +6,14 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+val versionFile = rootProject.file("version.txt")
+val versionStr = if (versionFile.exists()) versionFile.readText().trim() else "1.0.0"
+val versionParts = versionStr.split(".")
+val vMajor = versionParts.getOrNull(0)?.toIntOrNull() ?: 1
+val vMinor = versionParts.getOrNull(1)?.toIntOrNull() ?: 0
+val vPatch = versionParts.getOrNull(2)?.toIntOrNull() ?: 0
+val computedVersionCode = vMajor * 10000 + vMinor * 100 + vPatch
+
 android {
     namespace = "com.emanuele.gestionespese"
     compileSdk {
@@ -15,8 +23,8 @@ android {
         applicationId = "com.emanuele.gestionespese"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = computedVersionCode
+        versionName = versionStr
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
