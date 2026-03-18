@@ -23,6 +23,23 @@ function doGet(e) {
       return json_(resolveCategoriaLinkId_(categoriaId, sottocategoriaId));
     }
 
+    // ── Batch endpoint: restituisce tutti i dati in una sola chiamata ──────
+    if (resource === "sync_all") {
+      const utente = String(p.utente || "").trim();
+      if (!utente) return json_({ error: "Missing utente" }, 400);
+      return json_({
+        ok: true,
+        data: {
+          tipologie:      listTipologie_(),
+          categorie:      listCategorieRaw_(),
+          sottocategorie: listSottocategorieRaw_(),
+          conti:          listContiPerUtente_(utente),
+          utcs:           listUtcsPerUtente_(utente),
+          spese:          listSpesePerUtente_(utente)
+        }
+      });
+    }
+
     return json_({ error: "Unknown resource" }, 404);
   } catch (err) {
     return json_({ error: String(err && err.message ? err.message : err) }, 500);
@@ -253,4 +270,121 @@ function toIsoDate_(value) {
   const d = value instanceof Date ? value : new Date(value);
   if (isNaN(d.getTime())) return "";
   return Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM-dd");
+}
+
+// ── Funzioni di supporto per endpoint sync_all ────────────────────────────────
+
+function listTipologie_() {
+  try {
+    const sh = getSheet_("TIPOLOGIA");
+    const last = sh.getLastRow();
+    if (last < 2) return [];
+    const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).toLowerCase().trim());
+    const rows = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
+    const idx = (k) => headers.indexOf(k);
+    return rows.map(r => ({
+      id:            String(r[idx("id")] || r[0] || ""),
+      descrizione:   String(r[idx("descrizione")] !== undefined ? r[idx("descrizione")] : r[1] || ""),
+      attivo:        r[idx("attivo")] !== false && r[idx("attivo")] !== 0 && r[idx("attivo")] !== "",
+      tipo_movimento: String(r[idx("tipo_movimento")] || "uscita")
+    }));
+  } catch(e) { return []; }
+}
+
+function listCategorieRaw_() {
+  try {
+    const sh = getSheet_("CATEGORIE");
+    const last = sh.getLastRow();
+    if (last < 2) return [];
+    const rows = sh.getRange(2, 1, last - 1, 3).getValues();
+    return rows.map(r => ({
+      id:          String(r[0] || ""),
+      descrizione: String(r[1] || ""),
+      ordine:      Number(r[2] || 0),
+      attiva:      true
+    }));
+  } catch(e) { return []; }
+}
+
+function listSottocategorieRaw_() {
+  try {
+    const sh = getSheet_("SOTTOCATEGORIE");
+    const last = sh.getLastRow();
+    if (last < 2) return [];
+    const rows = sh.getRange(2, 1, last - 1, 4).getValues();
+    return rows.map(r => ({
+      id_categoria: String(r[1] || ""),
+      descrizione:  String(r[2] || ""),
+      ordine:       Number(r[3] || 0),
+      attiva:       true
+    }));
+  } catch(e) { return []; }
+}
+
+function listContiPerUtente_(utente) {
+  try {
+    const sh = getSheet_("UC");
+    const last = sh.getLastRow();
+    if (last < 2) return [];
+    const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).toLowerCase().trim());
+    const rows = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
+    const utenteIdx = headers.findIndex(h => h === "id_utente" || h === "utente");
+    const contoIdx  = headers.findIndex(h => h === "id_conto"  || h === "conto");
+    const attivoIdx = headers.indexOf("attivo");
+    return rows
+      .filter(r => String(r[utenteIdx] || "").trim() === utente)
+      .map(r => ({
+        ID_UTENTE: String(r[utenteIdx] || ""),
+        ID_CONTO:  String(r[contoIdx] || ""),
+        attivo:    attivoIdx < 0 || (r[attivoIdx] !== false && r[attivoIdx] !== 0 && r[attivoIdx] !== "")
+      }));
+  } catch(e) { return []; }
+}
+
+function listUtcsPerUtente_(utente) {
+  try {
+    const sh = getSheet_("UTCS");
+    const last = sh.getLastRow();
+    if (last < 2) return [];
+    const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h).toLowerCase().trim());
+    const rows = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
+    const utenteIdx    = headers.findIndex(h => h === "id_utente"        || h === "utente");
+    const tipologiaIdx = headers.findIndex(h => h === "id_tipologia"     || h === "tipologia");
+    const categoriaIdx = headers.findIndex(h => h === "id_categoria"     || h === "categoria");
+    const sottoIdx     = headers.findIndex(h => h === "id_sottocategoria"|| h === "sottocategoria");
+    const attivoIdx    = headers.indexOf("attivo");
+    return rows
+      .filter(r => String(r[utenteIdx] || "").trim() === utente)
+      .map(r => ({
+        ID_UTENTE:         String(r[utenteIdx] || ""),
+        ID_TIPOLOGIA:      String(r[tipologiaIdx] || ""),
+        ID_CATEGORIA:      String(r[categoriaIdx] || ""),
+        ID_SOTTOCATEGORIA: String(r[sottoIdx] || ""),
+        attivo:            attivoIdx < 0 || (r[attivoIdx] !== false && r[attivoIdx] !== 0 && r[attivoIdx] !== "")
+      }));
+  } catch(e) { return []; }
+}
+
+function listSpesePerUtente_(utente) {
+  try {
+    const sh = getSheet_("SPESE");
+    const last = sh.getLastRow();
+    if (last < 2) return [];
+    const rows = sh.getRange(2, 1, last - 1, 11).getValues();
+    return rows
+      .filter(r => String(r[1] || "").trim() === utente)
+      .map(r => ({
+        id:            Number(r[0]),
+        utente:        String(r[1] || ""),
+        data:          toIsoDate_(r[2]),
+        conto:         String(r[3] || ""),
+        importo:       Number(r[4] || 0),
+        tipo:          String(r[5] || ""),
+        categoria:     String(r[6] || ""),
+        sottocategoria: String(r[7] || ""),
+        descrizione:   String(r[8] || ""),
+        mese:          Number(r[9] || 0),
+        anno:          Number(r[10] || 0)
+      }));
+  } catch(e) { return []; }
 }

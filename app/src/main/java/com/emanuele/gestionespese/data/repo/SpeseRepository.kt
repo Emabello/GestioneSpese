@@ -77,6 +77,121 @@ class SpeseRepository(
         syncSpese(utente)
     }
 
+    /**
+     * Sincronizzazione batch: una sola chiamata GAS restituisce tutti i dati
+     * (tipologie, categorie, sottocategorie, conti, utcs, spese) in un'unica risposta.
+     *
+     * Se il backend non supporta ancora `sync_all` (risposta null o vuota),
+     * fa automaticamente fallback alle 6 chiamate sequenziali di [syncAll].
+     *
+     * @param utente ID dell'utente.
+     */
+    suspend fun syncAllBatch(utente: String) {
+        val data = runCatching { api.getSyncAll(utente = utente).data }.getOrNull()
+
+        if (data == null) {
+            // Fallback alle 6 chiamate sequenziali
+            syncAll(utente)
+            return
+        }
+
+        // ── Parse tipologie ───────────────────────────────────────────────
+        val tipiRawList = data.tipologie ?: emptyList()
+        val tipiList = tipiRawList
+            .filter { it.isActiveDefaultTrue() }
+            .mapNotNull {
+                buildLabel(
+                    it.firstNonBlank("id")?.numToCleanString(),
+                    it.firstNonBlank("descrizione", "nome", "label")
+                )
+            }
+            .distinct().sorted()
+
+        // ── Parse categorie ───────────────────────────────────────────────
+        val categorieList = (data.categorie ?: emptyList())
+            .filter { it.isActiveDefaultTrue() }
+            .mapNotNull { m ->
+                buildLabel(
+                    m.firstNonBlank("id")?.numToCleanString(),
+                    m.firstNonBlank("descrizione", "nome", "label")
+                )
+            }
+            .distinct().sorted()
+
+        // ── Parse sottocategorie ──────────────────────────────────────────
+        val sottoList = (data.sottocategorie ?: emptyList())
+            .filter { it.isActiveDefaultTrue() }
+            .mapNotNull { m ->
+                val catId = m.firstNonBlank("id_categoria", "categoria", "idCategoria")?.numToCleanString()
+                val sub   = m.firstNonBlank("descrizione", "sottocategoria", "nome", "label")
+                if (catId.isNullOrBlank() || sub.isNullOrBlank()) null
+                else SottoCatItem(categoria = catId.trim(), sottocategoria = sub.trim())
+            }
+            .distinctBy { it.categoria.lowercase() + "||" + it.sottocategoria.lowercase() }
+            .sortedWith(compareBy({ it.categoria.toIntOrNull() ?: Int.MAX_VALUE }, { it.sottocategoria.lowercase() }))
+
+        // ── Parse conti ───────────────────────────────────────────────────
+        val contiList = (data.conti ?: emptyList())
+            .filter { it.isActiveDefaultTrue() }
+            .mapNotNull { m -> m.firstNonBlank("id_conto", "ID_CONTO")?.trim() }
+            .distinct().sorted()
+
+        // ── Parse UTCs ────────────────────────────────────────────────────
+        val tipologiaTipoMap: Map<String, String> = tipiRawList.associate { m ->
+            val label = buildLabel(
+                m.firstNonBlank("id")?.numToCleanString(),
+                m.firstNonBlank("descrizione", "nome", "label")
+            ) ?: ""
+            label to (m.firstNonBlank("tipo_movimento", "TIPO_MOVIMENTO") ?: "uscita")
+        }
+        val utcEntities = (data.utcs ?: emptyList()).mapNotNull { m ->
+            val ut  = m.firstNonBlank("id_utente", "utenza", "ID_UTENTE")?.trim()
+            val tip = m.firstNonBlank("id_tipologia", "tipologia", "ID_TIPOLOGIA")?.trim()
+            val cat = m.firstNonBlank("id_categoria", "categoria", "ID_CATEGORIA")?.trim()
+            val sub = m.firstNonBlank("id_sottocategoria", "sottocategoria", "ID_SOTTOCATEGORIA")?.trim()
+            if (ut.isNullOrBlank() || tip.isNullOrBlank() ||
+                cat.isNullOrBlank() || sub.isNullOrBlank()) return@mapNotNull null
+            UtcEntity(
+                key            = utcKey(ut, tip, cat, sub),
+                utente         = ut,
+                tipologia      = tip,
+                categoria      = cat,
+                sottocategoria = sub,
+                attivo         = (m["attivo"] ?: m["ATTIVO"]).asBoolDefaultTrue(),
+                tipoMovimento  = tipologiaTipoMap[tip] ?: "uscita"
+            )
+        }
+
+        if (tipiList.isEmpty() && categorieList.isEmpty() && contiList.isEmpty()) {
+            // Risposta batch vuota → fallback
+            syncAll(utente)
+            return
+        }
+
+        // ── Scrittura su Room ─────────────────────────────────────────────
+        lookupDao.clearTipi()
+        lookupDao.upsertTipi(tipiList.map { TipoEntity(it) })
+        lookupDao.clearCategorie()
+        lookupDao.upsertCategorie(categorieList.map { CategoriaEntity(it) })
+        lookupDao.clearConti()
+        lookupDao.upsertConti(contiList.map { ContoEntity(value = it, utenteId = utente) })
+        lookupDao.clearSottocategorie()
+        lookupDao.upsertSottocategorie(sottoList.map {
+            SottoCategoriaEntity(
+                key            = sottoKey(it.categoria, it.sottocategoria),
+                categoria      = it.categoria.trim(),
+                sottocategoria = it.sottocategoria.trim()
+            )
+        })
+        lookupDao.clearUtcs()
+        lookupDao.upsertUtcs(utcEntities)
+
+        // ── Spese ─────────────────────────────────────────────────────────
+        val speseEntities = (data.spese ?: emptyList()).map { it.toEntity(utente) }
+        spesaDao.clearByUtente(utente)
+        spesaDao.upsertAll(speseEntities)
+    }
+
     // ── Scrittura (remote + aggiorna Room) ───────────────────────────────────
 
     /**

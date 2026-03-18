@@ -169,3 +169,17 @@ data class GenericDeleteRequest(
     val op: String = "delete",
     val id: Int
 )
+
+/**
+ * Payload dell'endpoint batch GAS `resource=sync_all`.
+ * Contiene tutti i dati necessari alla sincronizzazione in un'unica risposta.
+ * Tutti i campi sono nullable per resilienza a risposte parziali o fallback parziale.
+ */
+data class SyncAllData(
+    val tipologie:      List<Map<String, Any?>>? = null,
+    val categorie:      List<Map<String, Any?>>? = null,
+    val sottocategorie: List<Map<String, Any?>>? = null,
+    val conti:          List<Map<String, Any?>>? = null,
+    val utcs:           List<Map<String, Any?>>? = null,
+    val spese:          List<SpesaView>? = null
+)
