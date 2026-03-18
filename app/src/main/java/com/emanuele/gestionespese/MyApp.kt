@@ -127,6 +127,21 @@ class MyApp : Application() {
     }
 
     /**
+     * Imposta la sessione solo in memoria, senza persistere su SharedPreferences.
+     * Usato quando l'utente non spunta "Ricordami": la sessione viene persa al riavvio.
+     *
+     * @param userLabel    Nome visualizzato dell'utente.
+     * @param userId       ID numerico dell'utente.
+     * @param googleLinked `true` se l'account Google è collegato.
+     */
+    fun setTemporarySession(userLabel: String, userId: Int, googleLinked: Boolean) {
+        currentUserLabel    = userLabel
+        currentUserId       = userId
+        currentGoogleLinked = googleLinked
+        sessionActive       = true
+    }
+
+    /**
      * Cancella la sessione corrente (logout).
      * Rimuove tutti i dati utente dalla memoria e dalle SharedPreferences.
      */

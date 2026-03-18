@@ -183,8 +183,12 @@ class LoginActivity : FragmentActivity() {
                         // Usa il prompt già inizializzato — nessuna ricreazione
                         biometricPrompt.authenticate(promptInfo)
                     },
-                    onLoginSuccess = { userLabel, userId, googleLinked ->
-                        app.saveSession(userLabel, userId, googleLinked)
+                    onLoginSuccess = { userLabel, userId, googleLinked, rememberMe ->
+                        if (rememberMe) {
+                            app.saveSession(userLabel, userId, googleLinked)
+                        } else {
+                            app.setTemporarySession(userLabel, userId, googleLinked)
+                        }
 
                         val canUseBiometric = BiometricManager.from(this).canAuthenticate(
                             BiometricManager.Authenticators.BIOMETRIC_STRONG or
@@ -199,7 +203,7 @@ class LoginActivity : FragmentActivity() {
                             finish()
                         }
                     },
-                    onGoogleLogin = {
+                    onGoogleLogin = { rememberMe ->
                         lifecycleScope.launch {
                             try {
                                 val googleIdOption = GetGoogleIdOption.Builder()
@@ -233,7 +237,11 @@ class LoginActivity : FragmentActivity() {
                                     viewModel.performGoogleLogin(
                                         googleId  = googleId,
                                         onSuccess = { label, userId, googleLinked ->
-                                            app.saveSession(label, userId, googleLinked)
+                                            if (rememberMe) {
+                                                app.saveSession(label, userId, googleLinked)
+                                            } else {
+                                                app.setTemporarySession(label, userId, googleLinked)
+                                            }
 
                                             val canUseBiometric = BiometricManager.from(this@LoginActivity)
                                                 .canAuthenticate(
@@ -276,12 +284,13 @@ fun LoginScreen(
     viewModel: LoginViewModel,
     showBiometricButton: Boolean,
     onBiometricLogin: () -> Unit,
-    onLoginSuccess: (userLabel: String, userId: Int, googleLinked: Boolean) -> Unit,
-    onGoogleLogin: () -> Unit
+    onLoginSuccess: (userLabel: String, userId: Int, googleLinked: Boolean, rememberMe: Boolean) -> Unit,
+    onGoogleLogin: (rememberMe: Boolean) -> Unit
 ) {
     var utenza          by remember { mutableStateOf("") }
     var password        by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var rememberMe      by remember { mutableStateOf(false) }
     val isLoading       by viewModel.isLoading.collectAsState()
 
     var showErrorPopup by remember { mutableStateOf(false) }
@@ -399,13 +408,29 @@ fun LoginScreen(
                         )
                     )
 
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier          = Modifier.fillMaxWidth()
+                    ) {
+                        Checkbox(
+                            checked         = rememberMe,
+                            onCheckedChange = { rememberMe = it },
+                            colors          = CheckboxDefaults.colors(checkedColor = Brand)
+                        )
+                        Text(
+                            text  = "Ricordami",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
                     Button(
                         onClick  = {
                             viewModel.performLogin(
-                                utente    = utenza.trim(),
+                                utente    = utenza.trim().lowercase(),
                                 pass      = password,
                                 onSuccess = { label, userId, googleLinked ->
-                                    onLoginSuccess(label, userId, googleLinked)
+                                    onLoginSuccess(label, userId, googleLinked, rememberMe)
                                 },
                                 onError   = { msg ->
                                     errorPopupText = msg
@@ -513,7 +538,7 @@ fun LoginScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onGoogleLogin() }
+                        .clickable { onGoogleLogin(rememberMe) }
                         .padding(16.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment     = Alignment.CenterVertically
