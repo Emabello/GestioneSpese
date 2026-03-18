@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.MyApp
 import com.emanuele.gestionespese.data.model.*
+import com.emanuele.gestionespese.data.repo.stripFormulaFields
 import com.emanuele.gestionespese.ui.theme.Brand
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -212,14 +213,14 @@ fun ConfigScreen(onBack: () -> Unit) {
                                 GenericUpdateRequest(
                                     resource = selectedTable.resource,
                                     id       = id,
-                                    data     = data
+                                    data     = data.stripFormulaFields()
                                 )
                             )
                         } else {
                             api.insertRecord(
                                 GenericInsertRequest(
                                     resource = selectedTable.resource,
-                                    data     = data
+                                    data     = data.stripFormulaFields()
                                 )
                             )
                         }
