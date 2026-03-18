@@ -277,37 +277,82 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
 
     /**
      * Sincronizzazione completa: scarica spese e lookup dal backend e aggiorna Room.
-     * Imposta [SpeseUiState.syncDone] a `true` al termine (successo o errore)
-     * per sbloccare la navigazione dalla [SyncLoadingScreen].
+     *
+     * Se Room ha già dati (utente di ritorno), mostra subito la UI con i dati cached
+     * e aggiorna in background senza bloccare l'utente. Solo al primo login (Room vuoto)
+     * mostra la [SyncLoadingScreen] bloccante.
+     *
+     * Imposta [SpeseUiState.syncDone] a `true` non appena i dati sono disponibili
+     * (immediatamente se da cache, oppure dopo la sync per il primo login).
      */
     fun syncAll() {
         viewModelScope.launch {
-            _state.update { it.copy(loading = true, loadingLookups = true, error = null, syncDone = false) }
-            runCatching { repo.syncAll(currentUtente) }
-                .onSuccess {
-                    val spese = repo.list(currentUtente)
-                    val local = repo.getLookupsFromDb(utenteId = currentUtente)
-                    val utcs = repo.getUtcsFromDb(utenteId = currentUtente)
-                    _state.update {
-                        it.copy(
-                            loading = false, loadingLookups = false,
-                            spese = spese, didLoadSpese = true,
-                            tipi = local.tipi, categorie = local.categorie,
-                            conti = local.conti, sottocategorie = local.sottocategorie,
-                            utcs = utcs, didLoadLookups = true,
-                            syncDone = true   // ← sblocca la UI
-                        )
-                    }
+            // ── Step 1: leggi Room immediatamente (zero network) ──────────
+            val localSpese   = repo.list(currentUtente)
+            val localLookups = repo.getLookupsFromDb(utenteId = currentUtente)
+            val localUtcs    = repo.getUtcsFromDb(utenteId = currentUtente)
+
+            val hasLocal = localSpese.isNotEmpty()
+                    && localLookups.tipi.isNotEmpty()
+                    && localLookups.categorie.isNotEmpty()
+                    && localLookups.conti.isNotEmpty()
+                    && localUtcs.isNotEmpty()
+
+            if (hasLocal) {
+                // ── Step 2: mostra UI subito con dati cached ──────────────
+                _state.update {
+                    it.copy(
+                        loading = false, loadingLookups = false,
+                        spese = localSpese, didLoadSpese = true,
+                        tipi = localLookups.tipi, categorie = localLookups.categorie,
+                        conti = localLookups.conti, sottocategorie = localLookups.sottocategorie,
+                        utcs = localUtcs, didLoadLookups = true,
+                        syncDone = true, error = null
+                    )
                 }
-                .onFailure { e ->
-                    _state.update {
-                        it.copy(
-                            loading = false, loadingLookups = false,
-                            error = e.message,
-                            syncDone = true   // ← mostra comunque la UI con errore
-                        )
+                // ── Step 3: sync in background (nessuna loading screen) ───
+                runCatching { repo.syncAllBatch(currentUtente) }
+                    .onSuccess {
+                        val fresh = repo.list(currentUtente)
+                        val fl    = repo.getLookupsFromDb(utenteId = currentUtente)
+                        val fu    = repo.getUtcsFromDb(utenteId = currentUtente)
+                        _state.update {
+                            it.copy(
+                                spese = fresh, tipi = fl.tipi, categorie = fl.categorie,
+                                conti = fl.conti, sottocategorie = fl.sottocategorie,
+                                utcs = fu, didLoadSpese = true, didLoadLookups = true, error = null
+                            )
+                        }
                     }
-                }
+                    .onFailure { /* silenzioso: l'utente ha già dati validi da cache */ }
+            } else {
+                // ── Step 4: primo login (Room vuoto) — sync bloccante ─────
+                _state.update { it.copy(loading = true, loadingLookups = true, error = null, syncDone = false) }
+                runCatching { repo.syncAllBatch(currentUtente) }
+                    .onSuccess {
+                        val fresh = repo.list(currentUtente)
+                        val fl    = repo.getLookupsFromDb(utenteId = currentUtente)
+                        val fu    = repo.getUtcsFromDb(utenteId = currentUtente)
+                        _state.update {
+                            it.copy(
+                                loading = false, loadingLookups = false,
+                                spese = fresh, didLoadSpese = true,
+                                tipi = fl.tipi, categorie = fl.categorie, conti = fl.conti,
+                                sottocategorie = fl.sottocategorie, utcs = fu,
+                                didLoadLookups = true, syncDone = true
+                            )
+                        }
+                    }
+                    .onFailure { e ->
+                        _state.update {
+                            it.copy(
+                                loading = false, loadingLookups = false,
+                                error = e.message,
+                                syncDone = true   // ← mostra comunque la UI con errore
+                            )
+                        }
+                    }
+            }
         }
     }
 }

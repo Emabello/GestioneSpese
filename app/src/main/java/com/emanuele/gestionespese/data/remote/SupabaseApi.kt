@@ -79,6 +79,12 @@ interface SupabaseApi {
     suspend fun loginGoogle(@Body body: GoogleLoginRequest): ApiEnvelope<Map<String, Any?>>
 
     @GET("exec")
+    suspend fun getSyncAll(
+        @Query("resource") resource: String = "sync_all",
+        @Query("utente") utente: String
+    ): ApiEnvelope<SyncAllData>
+
+    @GET("exec")
     suspend fun getDashboard(
         @Query("resource") resource: String = "dashboard",
         @Query("utente") utente: String
