@@ -1,3 +1,9 @@
+/**
+ * Type.kt
+ *
+ * Definizione della tipografia Material 3 dell'app.
+ * Specifica stili di testo per le scale Display, Headline, Title, Body e Label.
+ */
 package com.emanuele.gestionespese.ui.theme
 
 import androidx.compose.material3.Typography

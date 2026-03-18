@@ -1,3 +1,10 @@
+/**
+ * Theme.kt
+ *
+ * Configurazione del tema Material 3 dell'app. Definisce le color scheme
+ * per la modalità chiara e scura, con supporto al Dynamic Color su Android 12+.
+ * Espone il composable [GestioneSpeseTheme] da applicare al root dell'app.
+ */
 package com.emanuele.gestionespese.ui.theme
 
 import android.os.Build

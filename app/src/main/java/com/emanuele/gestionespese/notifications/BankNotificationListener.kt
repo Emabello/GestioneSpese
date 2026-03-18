@@ -1,3 +1,18 @@
+/**
+ * BankNotificationListener.kt
+ *
+ * [NotificationListenerService] che intercetta le notifiche push dell'app bancaria
+ * Webank e le converte in bozze di movimenti ([SpesaDraftEntity]) salvate nel
+ * database locale tramite [SpesaDraftDao.insertIgnore] con deduplicazione SHA-256.
+ *
+ * Flusso:
+ * 1. Il sistema chiama [onNotificationPosted] per ogni nuova notifica.
+ * 2. Solo le notifiche con packageName == `com.opentecheng.android.webank` vengono elaborate.
+ * 3. [parseWebank] estrae importo, merchant e data dal testo della notifica.
+ * 4. [buildDedupKey] genera la chiave di deduplicazione.
+ * 5. La bozza viene salvata in Room (ignorata se già presente).
+ * 6. Tutti gli eventi vengono loggati in [DevLogger] per il pannello sviluppatore.
+ */
 package com.emanuele.gestionespese.notifications
 
 import android.service.notification.NotificationListenerService

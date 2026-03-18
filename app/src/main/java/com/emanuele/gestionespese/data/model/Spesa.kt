@@ -1,8 +1,26 @@
+/**
+ * Spesa.kt
+ *
+ * Modelli di dati per la comunicazione con il backend Google Apps Script.
+ * Contiene:
+ * - [ApiEnvelope]: wrapper standard per tutte le risposte del backend
+ * - [SpesaView]: DTO per la lettura dei movimenti (risposta GET)
+ * - [SpesaPatch]: DTO per i campi scrivibili (corpo di INSERT/UPDATE)
+ * - Request types: [InsertRequest], [UpdateRequest], [DeleteRequest] per le operazioni CRUD
+ * - Lookup types: [CategoriaRow], [SottoCatItem], [UtcItem] per le tabelle di riferimento
+ * - Auth types: [LoginRequest], [GoogleLoginRequest], [LinkGoogleRequest], [UnlinkGoogleRequest]
+ * - [SaveDashboardRequest]: payload per il salvataggio del layout dashboard
+ */
 package com.emanuele.gestionespese.data.model
 
 import com.google.gson.annotations.SerializedName
 
-// --- Envelope standard Apps Script: { ok: true, data: ... } oppure { error: "..." } ---
+/**
+ * Wrapper standard per tutte le risposte del backend Apps Script.
+ * Il backend risponde sempre con `{ ok: true, data: ... }` o `{ error: "..." }`.
+ *
+ * @param T Tipo del payload `data` (es. `List<SpesaView>`, `Map<String, Any?>`).
+ */
 data class ApiEnvelope<T>(
     val ok: Boolean? = null,
     val data: T? = null,

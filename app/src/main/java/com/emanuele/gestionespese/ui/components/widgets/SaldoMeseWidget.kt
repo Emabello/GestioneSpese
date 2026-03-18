@@ -1,3 +1,9 @@
+/**
+ * SaldoMeseWidget.kt
+ *
+ * Widget della dashboard che mostra il saldo netto del periodo selezionato
+ * (entrate – uscite). Il valore è colorato in verde se positivo, rosso se negativo.
+ */
 package com.emanuele.gestionespese.ui.components.widgets
 
 import androidx.compose.foundation.layout.*

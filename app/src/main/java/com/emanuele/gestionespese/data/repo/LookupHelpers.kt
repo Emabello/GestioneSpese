@@ -1,3 +1,13 @@
+/**
+ * LookupHelpers.kt
+ *
+ * Contiene:
+ * - [LookupsLocal]: aggregazione delle lookup tables usata dai ViewModel.
+ * - Funzioni di utilità per il parsing e la conversione dei dati ricevuti
+ *   dal backend (mappe JSON) nelle entità Room o nelle stringhe usate dalla UI.
+ *
+ * Tutte le funzioni sono `internal` e usate esclusivamente da [SpeseRepository].
+ */
 package com.emanuele.gestionespese.data.repo
 
 import com.emanuele.gestionespese.data.model.SottoCatItem
@@ -19,7 +29,12 @@ data class LookupsLocal(
     val conti: List<String>
 )
 
-// Cerca il primo valore non-blank tra le chiavi indicate
+/**
+ * Cerca il primo valore non-blank tra le chiavi indicate in una mappa JSON.
+ *
+ * @param keys Chiavi da cercare in ordine di priorità.
+ * @return Primo valore non-blank trovato, o `null` se nessuno è valido.
+ */
 internal fun Map<String, Any?>.firstNonBlank(vararg keys: String): String? {
     for (k in keys) {
         val s = this[k]?.toString()?.trim()
@@ -28,13 +43,23 @@ internal fun Map<String, Any?>.firstNonBlank(vararg keys: String): String? {
     return null
 }
 
-// Controlla il campo "attivo/attiva/active" — default true se assente
+/**
+ * Legge il campo di attivazione (`attivo`/`attiva`/`active`) dalla mappa.
+ * Restituisce `true` come default se il campo è assente (comportamento "opt-out").
+ *
+ * @return `true` se il record è attivo, `false` se esplicitamente disabilitato.
+ */
 internal fun Map<String, Any?>.isActiveDefaultTrue(): Boolean {
     val raw = this["attivo"] ?: this["ATTIVO"] ?: this["attiva"] ?: this["ATTIVA"] ?: this["active"]
     return raw.asBoolDefaultTrue()
 }
 
-// Converte qualsiasi valore in Boolean, default true se null
+/**
+ * Converte qualsiasi valore ricevuto dal backend in `Boolean`.
+ * Restituisce `true` come default se il valore è `null`.
+ *
+ * @return `true` per `null`, `true`, `"true"`, `"1"`, `"yes"`, numero != 0; `false` altrimenti.
+ */
 internal fun Any?.asBoolDefaultTrue(): Boolean = when (this) {
     null -> true
     is Boolean -> this
@@ -43,13 +68,27 @@ internal fun Any?.asBoolDefaultTrue(): Boolean = when (this) {
     else -> true
 }
 
-// "3.0" → "3", "4.5" → "4.5"
+/**
+ * Converte un numero decimale in stringa, rimuovendo il `.0` finale se intero.
+ * Es: `"3.0"` → `"3"`, `"4.5"` → `"4.5"`.
+ *
+ * @return Stringa numerica pulita, o la stringa originale se non è un numero valido.
+ */
 internal fun String.numToCleanString(): String {
     val d = this.trim().toDoubleOrNull() ?: return this.trim()
     return if (d % 1.0 == 0.0) d.toInt().toString() else this.trim()
 }
 
-// Costruisce label "id - descrizione", o solo uno dei due se l'altro è vuoto
+/**
+ * Costruisce una label leggibile combinando ID e descrizione.
+ * - Se entrambi presenti: `"id - descrizione"`
+ * - Se solo uno: restituisce quello non-blank
+ * - Se entrambi blank: restituisce `null`
+ *
+ * @param id    Identificativo del record (es. codice conto).
+ * @param descr Descrizione testuale del record.
+ * @return Label formattata, o `null` se entrambi i campi sono vuoti.
+ */
 internal fun buildLabel(id: String?, descr: String?): String? {
     val i = id?.trim().orEmpty()
     val d = descr?.trim().orEmpty()

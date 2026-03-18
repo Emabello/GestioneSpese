@@ -1,3 +1,17 @@
+/**
+ * SpeseRepository.kt
+ *
+ * Repository principale dell'app. Gestisce tutta la logica di accesso ai dati
+ * per le spese e le tabelle di lookup, coordinando:
+ * - Il database locale Room ([SpesaDao], [LookupDao])
+ * - Il backend remoto Google Apps Script ([SupabaseApi])
+ *
+ * Strategia dati: **offline-first con sync esplicito**.
+ * Le letture avvengono sempre da Room; la sincronizzazione con il backend
+ * viene avviata esplicitamente da [SpeseViewModel.syncAll].
+ *
+ * In fondo al file si trovano i mapper privati tra [SpesaView] ↔ [SpesaEntity].
+ */
 package com.emanuele.gestionespese.data.repo
 
 import com.emanuele.gestionespese.data.local.LookupDao
@@ -11,19 +25,39 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
+/**
+ * Repository per spese e lookup. Dipende da [SupabaseApi], [LookupDao] e [SpesaDao].
+ *
+ * @param api        Client Retrofit per le chiamate al backend.
+ * @param lookupDao  DAO per le tabelle di lookup (tipi, categorie, ecc.).
+ * @param spesaDao   DAO per la tabella `spese`.
+ */
 class SpeseRepository(
     private val api: SupabaseApi,
     private val lookupDao: LookupDao,
     private val spesaDao: SpesaDao
 ) {
 
-    /** ===================== SPESE — lettura da Room ===================== **/
+    // ── Lettura da Room ───────────────────────────────────────────────────────
 
+    /**
+     * Restituisce la lista completa di movimenti dell'utente dal DB locale.
+     *
+     * @param utente ID dell'utente.
+     * @return Lista di [SpesaView] ordinata per data decrescente.
+     */
     suspend fun list(utente: String): List<SpesaView> =
         spesaDao.getByUtente(utente).map { it.toSpesaView() }
 
-    /** ===================== SPESE — sync remoto → Room ===================== **/
+    // ── Sync remoto → Room ────────────────────────────────────────────────────
 
+    /**
+     * Scarica le spese dal backend e sostituisce il contenuto di Room.
+     * Operazione distruttiva: cancella tutte le spese locali dell'utente
+     * prima di inserire quelle remote.
+     *
+     * @param utente ID dell'utente.
+     */
     suspend fun syncSpese(utente: String) {
         val remoteList = api.getSpese(utente = utente).data ?: emptyList()
         val entities = remoteList.map { it.toEntity(utente) }
@@ -31,8 +65,14 @@ class SpeseRepository(
         spesaDao.upsertAll(entities)
     }
 
-    /** ===================== SYNC COMPLETO — spese + lookups in parallelo ===================== **/
+    // ── Sync completo ─────────────────────────────────────────────────────────
 
+    /**
+     * Esegue la sincronizzazione completa di spese e lookup in parallelo.
+     * Usato da [SpeseViewModel.syncAll] all'avvio e su richiesta esplicita.
+     *
+     * @param utente ID dell'utente.
+     */
     suspend fun syncAll(utente: String) {
         coroutineScope {
             val dSpese   = async { syncSpese(utente) }
@@ -42,8 +82,13 @@ class SpeseRepository(
         }
     }
 
-    /** ===================== SPESE — scrittura (remote + aggiorna Room) ===================== **/
+    // ── Scrittura (remote + aggiorna Room) ───────────────────────────────────
 
+    /**
+     * Inserisce una nuova spesa sul backend e aggiorna la cache locale.
+     *
+     * @throws IllegalStateException se il backend restituisce un errore.
+     */
     suspend fun add(
         utente: String,
         data: String,
@@ -74,6 +119,12 @@ class SpeseRepository(
         syncSpese(utente)
     }
 
+    /**
+     * Aggiorna una spesa esistente sul backend e sincronizza Room.
+     *
+     * @param id ID del movimento da aggiornare.
+     * @throws IllegalStateException se il backend restituisce un errore.
+     */
     suspend fun update(
         id: Int,
         utente: String,
@@ -105,14 +156,22 @@ class SpeseRepository(
         syncSpese(utente)
     }
 
+    /**
+     * Elimina una spesa dal backend e dal DB locale.
+     *
+     * @param id     ID del movimento da eliminare.
+     * @param utente ID dell'utente (non usato direttamente ma mantenuto per coerenza API).
+     * @throws IllegalStateException se il backend restituisce un errore.
+     */
     suspend fun delete(id: Int, utente: String) {
         val res = api.deleteSpesa(DeleteRequest(resource = "spese", id = id))
         if (res.error != null) throw IllegalStateException(res.error)
         spesaDao.deleteById(id)
     }
 
-    /** ===================== LOOKUPS (REMOTE) ===================== **/
+    // ── Lookup da remoto ──────────────────────────────────────────────────────
 
+    /** Scarica e filtra i tipi di movimento dal backend. */
     private suspend fun getTipi(): List<String> {
         val rows: List<Map<String, Any?>> = api.getTipi().data ?: emptyList()
         return rows
@@ -126,9 +185,11 @@ class SpeseRepository(
             .distinct().sorted()
     }
 
+    /** Scarica i tipi raw (mappa JSON) per estrarre `tipo_movimento`. */
     private suspend fun getTipiRaw(): List<Map<String, Any?>> =
         api.getTipi().data ?: emptyList()
 
+    /** Scarica e filtra le categorie attive dal backend. */
     private suspend fun getCategorie(): List<String> {
         val rows: List<CategoriaRow> = api.getCategorie().data ?: emptyList()
         return rows
@@ -137,6 +198,7 @@ class SpeseRepository(
             .distinct().sorted()
     }
 
+    /** Scarica e filtra le sottocategorie attive dal backend. */
     private suspend fun getSottocategorie(): List<SottoCatItem> {
         val rows: List<Map<String, Any?>> = api.getSottocategorie().data ?: emptyList()
         return rows
@@ -151,6 +213,11 @@ class SpeseRepository(
             .sortedWith(compareBy({ it.categoria.toIntOrNull() ?: Int.MAX_VALUE }, { it.sottocategoria.lowercase() }))
     }
 
+    /**
+     * Scarica i conti attivi dell'utente dal backend.
+     *
+     * @param utenteId ID dell'utente (usato per filtrare i conti sul backend).
+     */
     private suspend fun getConti(utenteId: String? = null): List<String> {
         val rows: List<Map<String, Any?>> = api.getUc(utente = utenteId).data ?: emptyList()
         return rows
@@ -160,8 +227,14 @@ class SpeseRepository(
             .sorted()
     }
 
-    /** ===================== CACHE (ROOM) ===================== **/
+    // ── Cache locale (Room) ───────────────────────────────────────────────────
 
+    /**
+     * Carica tutte le lookup tables dal DB locale in un'unica struttura [LookupsLocal].
+     *
+     * @param utenteId ID utente per filtrare i conti (opzionale).
+     * @return Aggregazione di tipi, categorie, sottocategorie e conti.
+     */
     suspend fun getLookupsFromDb(utenteId: String? = null): LookupsLocal {
         val conti = if (!utenteId.isNullOrBlank())
             lookupDao.getConti(utenteId)
@@ -176,6 +249,12 @@ class SpeseRepository(
         )
     }
 
+    /**
+     * Carica le associazioni UTC dal DB locale.
+     *
+     * @param utenteId Se specificato, filtra solo gli UTC dell'utente indicato.
+     * @return Lista di [UtcItem] per la compilazione automatica del form spese.
+     */
     suspend fun getUtcsFromDb(utenteId: String? = null): List<UtcItem> {
         val entities = if (!utenteId.isNullOrBlank())
             lookupDao.getUtcsByUtente(utenteId)
@@ -193,6 +272,13 @@ class SpeseRepository(
         }
     }
 
+    /**
+     * Scarica tutte le lookup dal backend in parallelo e aggiorna il DB locale.
+     * Le 6 chiamate API (tipi, tipiRaw, categorie, sottocategorie, conti, UTC)
+     * vengono lanciate in parallelo con [async] per minimizzare la latenza.
+     *
+     * @param utenteId ID dell'utente per filtrare i conti.
+     */
     suspend fun refreshLookupsFromRemoteAndSave(utenteId: String? = null) {
 
         // ── Lancia tutte le 6 chiamate API in parallelo ───────────────────────
@@ -270,8 +356,12 @@ class SpeseRepository(
     }
 }
 
-/** ===================== MAPPERS ===================== **/
+// ── Mapper privati ────────────────────────────────────────────────────────────
 
+/**
+ * Converte un [SpesaView] ricevuto dall'API in una [SpesaEntity] per Room.
+ * Estrae mese e anno dalla stringa data nel formato `"YYYY-MM-DD"`.
+ */
 private fun SpesaView.toEntity(utente: String): SpesaEntity {
     val parts = data?.split("-")
     return SpesaEntity(
@@ -290,6 +380,7 @@ private fun SpesaView.toEntity(utente: String): SpesaEntity {
     )
 }
 
+/** Converte una [SpesaEntity] da Room in un [SpesaView] usato dalla UI. */
 private fun SpesaEntity.toSpesaView() = SpesaView(
     id             = id,
     utente         = utente,

@@ -1,3 +1,12 @@
+/**
+ * RetrofitProvider.kt
+ *
+ * Factory singleton per la creazione del client Retrofit utilizzato per
+ * comunicare con il backend Google Apps Script. Configura:
+ * - [ApiKeyInterceptor] per l'autenticazione API key
+ * - Un interceptor di logging verso [DevLogger] per il pannello sviluppatore
+ * - [okhttp3.logging.HttpLoggingInterceptor] in modalità DEBUG per il body HTTP completo
+ */
 package com.emanuele.gestionespese.data.remote
 
 import com.emanuele.gestionespese.BuildConfig
@@ -7,8 +16,16 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
+/** Factory per [Retrofit], configurato con interceptor di autenticazione e logging. */
 object RetrofitProvider {
 
+    /**
+     * Crea un'istanza di [Retrofit] pronta all'uso.
+     *
+     * @param baseUrl URL base del backend (es. `"https://script.google.com/macros/s/.../exec"`).
+     * @param apiKey  Chiave API da aggiungere come query parameter.
+     * @return Istanza [Retrofit] con [GsonConverterFactory] e gli interceptor configurati.
+     */
     fun create(baseUrl: String, apiKey: String): Retrofit {
 
         // Interceptor che logga in DevLogger (visibile nella modalità sviluppatore)

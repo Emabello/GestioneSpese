@@ -1,3 +1,14 @@
+/**
+ * DashboardEditScreen.kt
+ *
+ * Schermata di modifica della dashboard personalizzata. Permette all'utente di:
+ * - Aggiungere nuovi widget dal catalogo disponibile
+ * - Rimuovere widget esistenti
+ * - Riordinare i widget con i pulsanti Su/Giù
+ * - Cambiare la dimensione (WIDE/SMALL) di ogni widget
+ *
+ * Le modifiche vengono salvate tramite [DashboardViewModel.saveLayout].
+ */
 package com.emanuele.gestionespese.ui.screens
 
 import androidx.compose.foundation.layout.*

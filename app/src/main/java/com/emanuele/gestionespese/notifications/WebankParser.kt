@@ -1,7 +1,27 @@
+/**
+ * WebankParser.kt
+ *
+ * Parser per le notifiche push dell'app Webank. Estrae importo, merchant e data
+ * dal testo della notifica usando espressioni regolari.
+ *
+ * Supporta due formati di notifica:
+ * 1. **ADDEBITO GENERICO CARTA** — formato recente con `Data:` e `Ora:` espliciti.
+ * 2. **Autorizzato pagamento / Pagamento autorizzato** — formato precedente senza data.
+ *
+ * Se nessun pattern corrisponde, [parseWebank] restituisce `null` e il
+ * [BankNotificationListener] ignora la notifica.
+ */
 package com.emanuele.gestionespese.notifications
 
 import com.emanuele.gestionespese.BuildConfig
 
+/**
+ * Risultato del parsing di una notifica Webank.
+ *
+ * @property amountCents Importo della transazione in centesimi di euro.
+ * @property merchant    Nome del merchant/esercente.
+ * @property dateMillis  Timestamp Unix in millisecondi della transazione.
+ */
 data class WebankParsed(
     val amountCents: Long,
     val merchant: String,
@@ -9,8 +29,14 @@ data class WebankParsed(
 )
 
 /**
- * Parsa il testo di una notifica Webank e ritorna i dati della transazione,
- * oppure null se il pattern non corrisponde.
+ * Parsa il testo di una notifica Webank ed estrae i dati della transazione.
+ *
+ * Prova prima il Pattern 1 (ADDEBITO GENERICO CARTA), poi il Pattern 2
+ * (Pagamento autorizzato). Restituisce `null` se nessuno corrisponde.
+ *
+ * @param text     Testo completo della notifica (title + text + bigText).
+ * @param postTime Timestamp Unix di ricezione della notifica (fallback per la data).
+ * @return [WebankParsed] con i dati estratti, o `null` se il parsing fallisce.
  */
 fun parseWebank(text: String, postTime: Long): WebankParsed? {
 
@@ -77,7 +103,10 @@ fun parseWebank(text: String, postTime: Long): WebankParsed? {
 
 /**
  * Prova a estrarre la data dal testo della notifica.
- * Formato atteso: "Data: 17/03/2026 Ora: 03:15"
+ * Formato atteso: `"Data: 17/03/2026 Ora: 03:15"`.
+ *
+ * @param text Testo della notifica.
+ * @return Timestamp Unix in millisecondi, o `null` se la data non è trovata.
  */
 private fun parseDateFromText(text: String): Long? {
     val match = Regex("""Data:\s*(\d{2})/(\d{2})/(\d{4})\s+Ora:\s*(\d{2}):(\d{2})""")

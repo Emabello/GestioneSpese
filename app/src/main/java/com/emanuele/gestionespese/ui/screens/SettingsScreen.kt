@@ -1,3 +1,15 @@
+/**
+ * SettingsScreen.kt
+ *
+ * Schermata delle impostazioni dell'app. Organizzata in sezioni:
+ * - **Account**: info utente, collegamento/scollegamento Google
+ * - **Sicurezza**: abilitazione dell'autenticazione biometrica
+ * - **Notifiche**: stato del listener per le notifiche bancarie Webank
+ * - **Sviluppatore**: log in-memory di [DevLogger], sincronizzazione forzata
+ *
+ * La sezione sviluppatore è visibile a tutti ma i log sono significativi
+ * principalmente in fase di debug.
+ */
 package com.emanuele.gestionespese.ui.screens
 
 import android.app.Activity

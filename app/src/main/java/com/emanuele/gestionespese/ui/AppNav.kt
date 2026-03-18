@@ -1,3 +1,13 @@
+/**
+ * AppNav.kt
+ *
+ * Configurazione della navigazione principale dell'app tramite Jetpack Navigation Compose.
+ * Definisce:
+ * - [Routes]: costanti per le destinazioni di navigazione
+ * - [MainTab]: tab della barra di navigazione inferiore (Home, Riepilogo, Notifiche, Impostazioni)
+ * - [AppNav]: composable root con il grafo di navigazione completo
+ * - [MainScreen]: schermata con la bottom bar e il contenuto principale
+ */
 package com.emanuele.gestionespese.ui
 
 import androidx.compose.foundation.layout.Box

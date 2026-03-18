@@ -1,3 +1,10 @@
+/**
+ * GraficoTortaWidget.kt
+ *
+ * Widget della dashboard che visualizza un grafico a torta (donut chart) delle
+ * spese suddivise per categoria nel periodo selezionato. Usa Canvas per il
+ * disegno diretto degli archi colorati.
+ */
 package com.emanuele.gestionespese.ui.components.widgets
 
 import androidx.compose.foundation.Canvas

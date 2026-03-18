@@ -1,3 +1,14 @@
+/**
+ * SpesaFormScreen.kt
+ *
+ * Form per l'aggiunta e la modifica di una spesa/movimento finanziario.
+ * In modalità modifica (se `spesaId != null`), i campi vengono pre-compilati
+ * con i dati della spesa esistente. Supporta anche la pre-compilazione da
+ * bozza bancaria (draft prefill).
+ *
+ * La categoria e la sottocategoria vengono suggerite automaticamente
+ * in base alle associazioni UTC dell'utente quando si seleziona il tipo.
+ */
 package com.emanuele.gestionespese.ui.screens
 
 import android.content.ClipData

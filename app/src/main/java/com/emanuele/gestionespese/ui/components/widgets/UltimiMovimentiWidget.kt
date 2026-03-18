@@ -1,3 +1,9 @@
+/**
+ * UltimiMovimentiWidget.kt
+ *
+ * Widget della dashboard che mostra gli ultimi [topN] movimenti del periodo
+ * selezionato, con data, descrizione e importo formattato.
+ */
 package com.emanuele.gestionespese.ui.components.widgets
 
 import androidx.compose.foundation.layout.*
