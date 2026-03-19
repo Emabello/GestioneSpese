@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -54,8 +55,8 @@ fun ConfigScreen(onBack: () -> Unit) {
     // ── Stato ────────────────────────────────────────────────────────
     var selectedTable   by remember { mutableStateOf(ConfigTable.TIPOLOGIA) }
     var tableExpanded   by remember { mutableStateOf(false) }
-    var records         by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
     var isLoading       by remember { mutableStateOf(false) }
+    var isRefreshing    by remember { mutableStateOf(false) }
     var errorMsg        by remember { mutableStateOf<String?>(null) }
 
     // Dialog stato
@@ -64,38 +65,52 @@ fun ConfigScreen(onBack: () -> Unit) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var selectedRecord    by remember { mutableStateOf<Map<String, Any?>?>(null) }
 
-    // Dati aggiuntivi per dropdown nei dialog
-    var allCategorie    by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
-    var allConti        by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
-    var allTipologie    by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
+    // Cache in memoria per tutte le tabelle (caricata una sola volta all'entrata)
+    var allCategorie      by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
+    var allConti          by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
+    var allTipologie      by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
     var allSottocategorie by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
+    var allUc             by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
+    var allUtcs           by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
 
-    // Dati UC e UTCS caricati per la logica di cascade (non visibili come tab)
-    var allUc   by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
-    var allUtcs by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
+    // Records derivati dalla cache in base alla tabella selezionata — nessuna chiamata di rete
+    val records: List<Map<String, Any?>> = when (selectedTable) {
+        ConfigTable.TIPOLOGIA      -> allTipologie
+        ConfigTable.CATEGORIA      -> allCategorie
+        ConfigTable.SOTTOCATEGORIA -> allSottocategorie
+        ConfigTable.CONTO          -> allConti
+        ConfigTable.UC             -> allUc
+        ConfigTable.UTCS           -> allUtcs
+    }
 
     // Messaggio cascade (quante voci sono state disattivate)
     var cascadeMsg by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // ── Carica records ───────────────────────────────────────────────
-    fun loadRecords() {
+    // ── Carica tutte le tabelle in parallelo (una sola volta all'entrata) ──
+    fun loadAllData() {
         scope.launch {
             isLoading = true
             errorMsg  = null
             try {
-                records = when (selectedTable) {
-                    ConfigTable.UC   -> api.getUc(utente = currentUtente).data ?: emptyList()
-                    ConfigTable.UTCS -> api.getUtcs().data
+                val categorieD = async { api.getCategorie().data
+                    ?.map { mapOf("id" to it.id, "descrizione" to it.descrizione, "attiva" to it.attiva) }
+                    ?: emptyList() }
+                val contiD     = async { api.getConti().data ?: emptyList() }
+                val tipologieD = async { api.getTipi().data ?: emptyList() }
+                val sottocD    = async { api.getSottocategorie().data ?: emptyList() }
+                val ucD        = async { api.getUc(utente = currentUtente).data ?: emptyList() }
+                val utcsD      = async {
+                    api.getUtcs().data
                         ?.filter { r -> java.lang.String(r["id_utente"]?.toString() ?: "").trim() == currentUtente }
                         ?: emptyList()
-                    ConfigTable.CATEGORIA -> api.getCategorie().data
-                        ?.map { mapOf("id" to it.id, "descrizione" to it.descrizione, "attiva" to it.attiva) }
-                        ?: emptyList()
-                    ConfigTable.TIPOLOGIA -> api.getTipi().data ?: emptyList()
-                    ConfigTable.SOTTOCATEGORIA -> api.getSottocategorie().data ?: emptyList()
-                    ConfigTable.CONTO -> api.getConti().data ?: emptyList()
                 }
+                allCategorie      = categorieD.await()
+                allConti          = contiD.await()
+                allTipologie      = tipologieD.await()
+                allSottocategorie = sottocD.await()
+                allUc             = ucD.await()
+                allUtcs           = utcsD.await()
             } catch (e: Exception) {
                 errorMsg = e.message
             } finally {
@@ -104,27 +119,29 @@ fun ConfigScreen(onBack: () -> Unit) {
         }
     }
 
-    // Carica dati ausiliari per i dialog e per la cascade
-    fun loadAuxData() {
+    // ── Refresh mirato: ricarica solo la tabella selezionata ─────────
+    fun refreshSelectedTable() {
         scope.launch {
+            isRefreshing = true
+            errorMsg     = null
             try {
-                val categorieDeferred      = async { api.getCategorie().data?.map { mapOf("id" to it.id, "descrizione" to it.descrizione) } ?: emptyList() }
-                val contiDeferred          = async { api.getConti().data ?: emptyList() }
-                val tipologieDeferred      = async { api.getTipi().data ?: emptyList() }
-                val sottocDeferred         = async { api.getSottocategorie().data ?: emptyList() }
-                val ucDeferred             = async { api.getUc(utente = currentUtente).data ?: emptyList() }
-                val utcsDeferred           = async {
-                    api.getUtcs().data
+                when (selectedTable) {
+                    ConfigTable.TIPOLOGIA      -> allTipologie      = api.getTipi().data ?: emptyList()
+                    ConfigTable.CATEGORIA      -> allCategorie      = api.getCategorie().data
+                        ?.map { mapOf("id" to it.id, "descrizione" to it.descrizione, "attiva" to it.attiva) }
+                        ?: emptyList()
+                    ConfigTable.SOTTOCATEGORIA -> allSottocategorie = api.getSottocategorie().data ?: emptyList()
+                    ConfigTable.CONTO          -> allConti          = api.getConti().data ?: emptyList()
+                    ConfigTable.UC             -> allUc             = api.getUc(utente = currentUtente).data ?: emptyList()
+                    ConfigTable.UTCS           -> allUtcs           = api.getUtcs().data
                         ?.filter { r -> java.lang.String(r["id_utente"]?.toString() ?: "").trim() == currentUtente }
                         ?: emptyList()
                 }
-                allCategorie      = categorieDeferred.await()
-                allConti          = contiDeferred.await()
-                allTipologie      = tipologieDeferred.await()
-                allSottocategorie = sottocDeferred.await()
-                allUc             = ucDeferred.await()
-                allUtcs           = utcsDeferred.await()
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                errorMsg = e.message
+            } finally {
+                isRefreshing = false
+            }
         }
     }
 
@@ -173,16 +190,17 @@ fun ConfigScreen(onBack: () -> Unit) {
                 jobs.awaitAll()
 
                 cascadeMsg = "$totalCount ${if (totalCount == 1) "voce correlata disattivata" else "voci correlate disattivate"}"
-                loadAuxData()
+                loadAllData()
             } catch (e: Exception) {
                 errorMsg = e.message
             }
         }
     }
 
-    LaunchedEffect(selectedTable) {
-        loadRecords()
-        loadAuxData()
+    // Carica tutti i dati una sola volta all'entrata nella schermata.
+    // Il cambio tabella usa la cache in memoria — nessuna chiamata di rete.
+    LaunchedEffect(Unit) {
+        loadAllData()
     }
 
     LaunchedEffect(cascadeMsg) {
@@ -226,7 +244,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                         }
                         showAddDialog  = false
                         showEditDialog = false
-                        loadRecords()
+                        refreshSelectedTable()
                     } catch (e: Exception) {
                         errorMsg = e.message
                     }
@@ -251,7 +269,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                 GenericDeleteRequest(resource = selectedTable.resource, id = id)
                             )
                             showDeleteConfirm = false
-                            loadRecords()
+                            refreshSelectedTable()
                         } catch (e: Exception) {
                             errorMsg = e.message
                             showDeleteConfirm = false
@@ -273,6 +291,26 @@ fun ConfigScreen(onBack: () -> Unit) {
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick  = { refreshSelectedTable() },
+                        enabled  = !isRefreshing && !isLoading
+                    ) {
+                        if (isRefreshing) {
+                            CircularProgressIndicator(
+                                modifier  = androidx.compose.ui.Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color     = Brand
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Aggiorna ${selectedTable.label}",
+                                tint = Brand
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -395,7 +433,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                     )
                                     // Se si disattiva, propaga la disattivazione alle voci correlate
                                     if (!newVal) cascadeDeactivate(selectedTable, id)
-                                    loadRecords()
+                                    refreshSelectedTable()
                                 } catch (e: Exception) {
                                     errorMsg = e.message
                                 }
