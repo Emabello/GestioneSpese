@@ -30,8 +30,12 @@ interface LookupDao {
     // ── Tipi ─────────────────────────────────────────────────────────────────
 
     /** Restituisce tutti i tipi di movimento in ordine alfabetico. */
-    @Query("SELECT value FROM lk_tipi ORDER BY value")
+    @Query("SELECT value FROM lk_tipi WHERE attivo = 1 ORDER BY value")
     suspend fun getTipi(): List<String>
+
+    // Tipi — tutti (per ConfigScreen)
+    @Query("SELECT value, attivo, tipoMovimento FROM lk_tipi ORDER BY value")
+    suspend fun getTipiRaw(): List<TipoEntity>
 
     /** Inserisce o aggiorna una lista di tipi. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -44,8 +48,12 @@ interface LookupDao {
     // ── Categorie ────────────────────────────────────────────────────────────
 
     /** Restituisce tutte le categorie in ordine alfabetico. */
-    @Query("SELECT value FROM lk_categorie ORDER BY value")
+    @Query("SELECT value FROM lk_categorie WHERE attivo = 1 ORDER BY value")
     suspend fun getCategorie(): List<String>
+
+    // Categorie — tutte
+    @Query("SELECT value, attivo FROM lk_categorie ORDER BY value")
+    suspend fun getCategorieRaw(): List<CategoriaEntity>
 
     /** Inserisce o aggiorna una lista di categorie. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -62,8 +70,12 @@ interface LookupDao {
      *
      * @param utenteId ID dell'utente.
      */
-    @Query("SELECT value FROM lk_conti WHERE utenteId = :utenteId ORDER BY value")
+    @Query("SELECT value FROM lk_conti WHERE utenteId = :utenteId AND attivo = 1 ORDER BY value")
     suspend fun getConti(utenteId: String): List<String>
+
+    // Conti — tutti
+    @Query("SELECT * FROM lk_conti WHERE utenteId = :utenteId ORDER BY value")
+    suspend fun getContiRaw(utenteId: String): List<ContoEntity>
 
     /** Inserisce o aggiorna una lista di conti. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -76,8 +88,12 @@ interface LookupDao {
     // ── Sottocategorie ───────────────────────────────────────────────────────
 
     /** Restituisce tutte le coppie (categoria, sottocategoria) ordinate. */
-    @Query("SELECT categoria, sottocategoria FROM lk_sottocategorie ORDER BY categoria, sottocategoria")
+    @Query("SELECT categoria, sottocategoria FROM lk_sottocategorie WHERE attivo = 1  ORDER BY categoria, sottocategoria")
     suspend fun getSottocategoriePairs(): List<SottoCatPair>
+
+    // Sottocategorie — tutte
+    @Query("SELECT * FROM lk_sottocategorie ORDER BY categoria, sottocategoria")
+    suspend fun getSottocategorieRaw(): List<SottoCategoriaEntity>
 
     /**
      * Restituisce le sottocategorie di una categoria specifica.

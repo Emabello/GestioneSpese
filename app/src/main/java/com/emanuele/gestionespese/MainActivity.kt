@@ -64,6 +64,8 @@ class MainActivity : ComponentActivity() {
         val downloadingState = mutableStateOf(false)
         val downloadProgressState = mutableFloatStateOf(0f)
 
+        viewModel.syncAll()
+
         setContent {
             GestioneSpeseTheme {
                 AppNav(vm = viewModel)
@@ -124,7 +126,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        viewModel.syncAll()
 
         lifecycleScope.launch {
             val info = UpdateChecker.checkForUpdate(BuildConfig.VERSION_NAME)

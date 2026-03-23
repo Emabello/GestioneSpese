@@ -45,9 +45,9 @@ object RetrofitProvider {
         val client = OkHttpClient.Builder()
             .addInterceptor(ApiKeyInterceptor(apiKey))
             .addInterceptor(devLogInterceptor)
-            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(90, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
             .apply {
                 if (BuildConfig.DEBUG) {
                     addInterceptor(

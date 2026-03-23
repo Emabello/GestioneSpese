@@ -498,7 +498,7 @@ fun SpesaFormScreen(
                         editEnabled && !saving && !state.loadingLookups) { tipo = it }
 
                     DropdownFieldString("Categoria", categoria, categorieOptions,
-                        editEnabled && !saving && !state.loadingLookups) { categoria = it }
+                        editEnabled && !saving && !state.loadingLookups && tipo.isNotBlank()) { categoria = it }
 
                     DropdownFieldString("Sottocategoria (opzionale)", sottocategoria,
                         sottocategorieOptions,

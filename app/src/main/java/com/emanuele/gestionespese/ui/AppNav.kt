@@ -145,7 +145,7 @@ fun AppNav(vm: SpeseViewModel) {
         }
 
         composable(Routes.CONFIG) {
-            ConfigScreen(onBack = { nav.popBackStack() })
+            ConfigScreen(vm = vm, onBack = { nav.popBackStack() })
         }
     }
 }

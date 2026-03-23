@@ -20,6 +20,8 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "lk_sottocategorie")
 data class SottoCategoriaEntity(
     @PrimaryKey val key: String,
+    val id: Int = 0,
     val categoria: String,
-    val sottocategoria: String
+    val sottocategoria: String,
+    val attivo: Boolean = true
 )

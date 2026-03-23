@@ -16,5 +16,7 @@ import androidx.room.PrimaryKey
  */
 @Entity(tableName = "lk_tipi")
 data class TipoEntity(
-    @PrimaryKey val value: String
+    @PrimaryKey val value: String,
+    val attivo: Boolean = true,
+    val tipoMovimento: String = "uscita"
 )
