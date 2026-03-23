@@ -46,6 +46,7 @@ interface SupabaseApi {
         @Query("resource") resource: String = "sottocategoria"
     ): ApiEnvelope<List<Map<String, Any?>>>
 
+
     @GET("exec")
     suspend fun getUc(
         @Query("resource") resource: String = "uc",

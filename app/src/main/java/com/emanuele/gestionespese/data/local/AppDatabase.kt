@@ -28,7 +28,7 @@ import com.emanuele.gestionespese.data.local.entities.*
         SpesaEntity::class,
         DashboardEntity::class
     ],
-    version = 10,
+    version = 12,
     exportSchema = false
 )
 /** Database principale dell'app, costruito tramite [androidx.room.Room.databaseBuilder] in [MyApp]. */

@@ -98,7 +98,7 @@ data class UtenteRow(
 // --- Coppia categoria/sottocategoria (usata nel repository e nel DAO) ---
 data class SottoCatItem(
     val categoria: String,
-    val sottocategoria: String
+    val sottocategoria: String,
 )
 
 // --- UTC: abbinamento utenza-tipologia-categoria-sottocategoria ---

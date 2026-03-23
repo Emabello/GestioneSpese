@@ -199,7 +199,11 @@ class LoginActivity : FragmentActivity() {
                             pendingApp = app
                             showBiometricDialog = true
                         } else {
-                            startActivity(Intent(this, MainActivity::class.java))
+                            startActivity(
+                                Intent(this, MainActivity::class.java).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                                }
+                            )
                             finish()
                         }
                     },
@@ -427,7 +431,7 @@ fun LoginScreen(
                     Button(
                         onClick  = {
                             viewModel.performLogin(
-                                utente    = utenza.trim().lowercase(),
+                                utente    = utenza.trim().uppercase(),
                                 pass      = password,
                                 onSuccess = { label, userId, googleLinked ->
                                     onLoginSuccess(label, userId, googleLinked, rememberMe)

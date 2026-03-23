@@ -16,5 +16,6 @@ import androidx.room.PrimaryKey
  */
 @Entity(tableName = "lk_categorie")
 data class CategoriaEntity(
-    @PrimaryKey val value: String
+    @PrimaryKey val value: String,
+    val attivo: Boolean = true
 )

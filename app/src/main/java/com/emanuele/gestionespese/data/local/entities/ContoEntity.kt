@@ -22,5 +22,6 @@ import androidx.room.Index
 )
 data class ContoEntity(
     val utenteId: String,
-    val value: String
+    val value: String,
+    val attivo: Boolean = true
 )

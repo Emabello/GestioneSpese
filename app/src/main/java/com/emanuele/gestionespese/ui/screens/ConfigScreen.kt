@@ -1,71 +1,101 @@
 /**
  * ConfigScreen.kt
  *
- * Schermata di configurazione delle lookup tables: tipi, categorie, conti
- * e sottocategorie. Permette all'utente di visualizzare i dati sincronizzati
- * e forzare una risincronizzazione manuale dal backend.
+ * Schermata di configurazione con due tab (UTCS / Conti):
+ * - UTCS: drill-down 3 livelli (Tipologia → Categoria → Sottocategoria)
+ *         Il filtro usa allUtcs come sorgente della gerarchia.
+ * - Conti: lista flat con inserimento automatico UC.
  *
- * I dati visualizzati sono quelli presenti nel DB locale Room, aggiornati
- * dall'ultima sincronizzazione avvenuta.
+ * Creazione automatica associazioni:
+ * - Nuova Sottocategoria → inserisce SOTTOCATEGORIA + UTCS
+ * - Nuovo Conto          → inserisce CONTO + UC
  */
 package com.emanuele.gestionespese.ui.screens
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.MyApp
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.data.repo.stripFormulaFields
 import com.emanuele.gestionespese.ui.theme.Brand
+import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 
-// ── Tabelle disponibili ───────────────────────────────────────────────
+// ── Tab principali ────────────────────────────────────────────────────
+private enum class ConfigTab { UTCS, CONTI }
+
+// ── Livello drill-down UTCS ───────────────────────────────────────────
+private enum class DrillLevel { TIPOLOGIA, CATEGORIA, SOTTOCATEGORIA }
+
+// ── ConfigTable ───────────────────────────────────────────────────────
 enum class ConfigTable(val label: String, val resource: String) {
-    TIPOLOGIA("Tipologie",     "tipologia"),
-    CATEGORIA("Categorie",     "categoria"),
-    SOTTOCATEGORIA("Sottocategorie", "sottocategoria"),
-    CONTO("Conti",             "conto"),
-    UC("Conti utente (UC)",    "uc"),
-    UTCS("Combinazioni (UTCS)","utcs")
+    TIPOLOGIA     ("Tipologie",           "tipologia"),
+    CATEGORIA     ("Categorie",           "categoria"),
+    SOTTOCATEGORIA("Sottocategorie",      "sottocategoria"),
+    CONTO         ("Conti",               "conto"),
+    UC            ("Conti utente (UC)",   "uc"),
+    UTCS          ("Combinazioni (UTCS)", "utcs")
 }
+
+// ── Campi da non toccare mai in update/insert ─────────────────────────
+private val READONLY_FIELDS = setOf(
+    "id_definizione", "id_definizione_attivo",
+    "id", "lista_conto_riga", "mese", "anno"
+)
+
+private fun Map<String, Any?>.safePayload(): Map<String, Any?> =
+    filterKeys { it.lowercase() !in READONLY_FIELDS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConfigScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val app     = context.applicationContext as MyApp
-    val api     = app.api
-    val scope   = rememberCoroutineScope()
+fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
+    val vmState by vm.state.collectAsState()
+
+    val context       = LocalContext.current
+    val app           = context.applicationContext as MyApp
+    val api           = app.api
+    val scope         = rememberCoroutineScope()
     val currentUtente = app.currentUserLabel ?: ""
 
-    // ── Stato ────────────────────────────────────────────────────────
-    var selectedTable   by remember { mutableStateOf(ConfigTable.TIPOLOGIA) }
-    var tableExpanded   by remember { mutableStateOf(false) }
+    // ── Navigazione ───────────────────────────────────────────────────
+    var activeTab    by remember { mutableStateOf(ConfigTab.UTCS) }
+    var drillLevel   by remember { mutableStateOf(DrillLevel.TIPOLOGIA) }
+    var selectedTipo by remember { mutableStateOf<Map<String, Any?>?>(null) }
+    var selectedCat  by remember { mutableStateOf<Map<String, Any?>?>(null) }
+
+    // ── Stato UI ──────────────────────────────────────────────────────
     var isLoading       by remember { mutableStateOf(false) }
     var isRefreshing    by remember { mutableStateOf(false) }
+    // Map id→true per mostrare loading su una specifica card
+    var loadingRecordId by remember { mutableStateOf<String?>(null) }
     var errorMsg        by remember { mutableStateOf<String?>(null) }
 
-    // Dialog stato
+    // ── Dialog stato ──────────────────────────────────────────────────
     var showAddDialog     by remember { mutableStateOf(false) }
     var showEditDialog    by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var selectedRecord    by remember { mutableStateOf<Map<String, Any?>?>(null) }
+    var dialogTable       by remember { mutableStateOf(ConfigTable.TIPOLOGIA) }
 
-    // Cache in memoria per tutte le tabelle (caricata una sola volta all'entrata)
+    // ── Cache dati ────────────────────────────────────────────────────
     var allCategorie      by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
     var allConti          by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
     var allTipologie      by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
@@ -73,107 +103,199 @@ fun ConfigScreen(onBack: () -> Unit) {
     var allUc             by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
     var allUtcs           by remember { mutableStateOf<List<Map<String, Any?>>>(emptyList()) }
 
-    // Records derivati dalla cache in base alla tabella selezionata — nessuna chiamata di rete
-    val records: List<Map<String, Any?>> = when (selectedTable) {
-        ConfigTable.TIPOLOGIA      -> allTipologie
-        ConfigTable.CATEGORIA      -> allCategorie
-        ConfigTable.SOTTOCATEGORIA -> allSottocategorie
-        ConfigTable.CONTO          -> allConti
-        ConfigTable.UC             -> allUc
-        ConfigTable.UTCS           -> allUtcs
+    // extractId e recordId sono definite a livello file (extractIdStatic)
+    // usiamo un alias locale per leggibilità
+    fun extractId(v: Any?): String = extractIdStatic(v)
+    fun recordId(r: Map<String, Any?>): String = extractIdStatic(r["id"])
+
+    // ── Filtro drill-down via UTCS ────────────────────────────────────
+    // derivedStateOf garantisce ricalcolo reattivo quando allUtcs/drillLevel cambiano
+    val utcsFiltrati by remember {
+        derivedStateOf {
+            allUtcs.filter {
+                java.lang.String(it["id_utente"]?.toString() ?: "").trim() == currentUtente
+            }
+        }
     }
 
-    // Messaggio cascade (quante voci sono state disattivate)
-    var cascadeMsg by remember { mutableStateOf<String?>(null) }
+    val currentList by remember {
+        derivedStateOf {
+            when {
+                activeTab == ConfigTab.CONTI -> allConti
+
+                drillLevel == DrillLevel.TIPOLOGIA -> allTipologie
+
+                drillLevel == DrillLevel.CATEGORIA -> {
+                    val tipoId = extractId(selectedTipo?.get("id"))
+                    val catIds = utcsFiltrati
+                        .filter { extractId(it["id_tipologia"]) == tipoId }
+                        .map    { extractId(it["id_categoria"]) }
+                        .filter { it.isNotBlank() }
+                        .toSet()
+                    allCategorie.filter { extractId(it["id"]) in catIds }
+                }
+
+                else -> {
+                    val tipoId = extractId(selectedTipo?.get("id"))
+                    val catId  = extractId(selectedCat?.get("id"))
+                    val sottoIds = utcsFiltrati
+                        .filter {
+                            extractId(it["id_tipologia"]) == tipoId &&
+                                    extractId(it["id_categoria"])  == catId
+                        }
+                        .map    { extractId(it["id_sottocategoria"]) }
+                        .filter { it.isNotBlank() }
+                        .toSet()
+                    allSottocategorie.filter { extractId(it["id"]) in sottoIds }
+                }
+            }
+        }
+    }
+
+    // ── ConfigTable corrente ──────────────────────────────────────────
+    val currentTable: ConfigTable = when {
+        activeTab == ConfigTab.CONTI          -> ConfigTable.CONTO
+        drillLevel == DrillLevel.TIPOLOGIA    -> ConfigTable.TIPOLOGIA
+        drillLevel == DrillLevel.CATEGORIA    -> ConfigTable.CATEGORIA
+        else                                  -> ConfigTable.SOTTOCATEGORIA
+    }
+
+    // ── Breadcrumb ────────────────────────────────────────────────────
+    val breadcrumb: String = when {
+        activeTab == ConfigTab.CONTI -> "Conti"
+        drillLevel == DrillLevel.TIPOLOGIA -> "Tipologie"
+        drillLevel == DrillLevel.CATEGORIA ->
+            "Tipologie  ›  ${selectedTipo?.get("descrizione") ?: "—"}"
+        else ->
+            "Tipologie  ›  ${selectedTipo?.get("descrizione") ?: "—"}  ›  ${selectedCat?.get("descrizione") ?: "—"}"
+    }
+
+    // ── Back handler ──────────────────────────────────────────────────
+    val canGoBack = activeTab == ConfigTab.UTCS && drillLevel != DrillLevel.TIPOLOGIA
+    BackHandler(enabled = canGoBack) {
+        when (drillLevel) {
+            DrillLevel.SOTTOCATEGORIA -> { drillLevel = DrillLevel.CATEGORIA;  selectedCat  = null }
+            DrillLevel.CATEGORIA      -> { drillLevel = DrillLevel.TIPOLOGIA;  selectedTipo = null }
+            else -> {}
+        }
+    }
+
+    // ── Snackbar ──────────────────────────────────────────────────────
+    var snackMsg          by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(snackMsg) {
+        snackMsg?.let { snackbarHostState.showSnackbar(it); snackMsg = null }
+    }
 
-    // ── Carica tutte le tabelle in parallelo (una sola volta all'entrata) ──
-    fun loadAllData() {
-        scope.launch {
-            isLoading = true
-            errorMsg  = null
-            try {
-                val categorieD = async { api.getCategorie().data
-                    ?.map { mapOf("id" to it.id, "descrizione" to it.descrizione, "attiva" to it.attiva) }
-                    ?: emptyList() }
-                val contiD     = async { api.getConti().data ?: emptyList() }
-                val tipologieD = async { api.getTipi().data ?: emptyList() }
-                val sottocD    = async { api.getSottocategorie().data ?: emptyList() }
-                val ucD        = async { api.getUc(utente = currentUtente).data ?: emptyList() }
-                val utcsD      = async {
-                    api.getUtcs().data
-                        ?.filter { r -> java.lang.String(r["id_utente"]?.toString() ?: "").trim() == currentUtente }
-                        ?: emptyList()
-                }
-                allCategorie      = categorieD.await()
-                allConti          = contiD.await()
-                allTipologie      = tipologieD.await()
-                allSottocategorie = sottocD.await()
-                allUc             = ucD.await()
-                allUtcs           = utcsD.await()
-            } catch (e: Exception) {
-                errorMsg = e.message
-            } finally {
-                isLoading = false
+    // ── Popola cache da vmState (zero rete) ───────────────────────────
+    LaunchedEffect(vmState.didLoadLookups) {
+        if (vmState.didLoadLookups) {
+            if (allTipologie.isEmpty()) allTipologie = vmState.tipi.map { label ->
+                val p = label.split(" - ", limit = 2)
+                mapOf("id" to p.getOrNull(0), "descrizione" to p.getOrNull(1),
+                    "attivo" to true, "tipo_movimento" to "uscita")
             }
+            if (allCategorie.isEmpty()) allCategorie = vmState.categorie.map { label ->
+                val p = label.split(" - ", limit = 2)
+                mapOf("id" to p.getOrNull(0), "descrizione" to p.getOrNull(1), "attiva" to true)
+            }
+            if (allConti.isEmpty()) allConti = vmState.conti.map { label ->
+                val p = label.split(" - ", limit = 2)
+                mapOf("id" to p.getOrNull(0), "id_conto" to label,
+                    "descrizione" to label, "attivo" to true)
+            }
+            // allSottocategorie NON viene popolato da vmState perché i record
+            // da vmState hanno id=null e rompono il filtro drill-down.
         }
     }
 
-    // ── Refresh mirato: ricarica solo la tabella selezionata ─────────
-    fun refreshSelectedTable() {
+    // ── Carica da API ─────────────────────────────────────────────────
+    // UTCS viene sempre caricato (necessario per il drill-down).
+    // Il resto solo se la cache è vuota.
+    fun loadAllData(forceRefresh: Boolean = false) {
         scope.launch {
-            isRefreshing = true
-            errorMsg     = null
+            isLoading = true; errorMsg = null
             try {
-                when (selectedTable) {
-                    ConfigTable.TIPOLOGIA      -> allTipologie      = api.getTipi().data ?: emptyList()
-                    ConfigTable.CATEGORIA      -> allCategorie      = api.getCategorie().data
+                // Forza sempre il caricamento completo da API:
+                // vmState popola allTipologie/allCategorie ma non allUtcs/allSottocategorie
+                // (le sottocategorie da vmState hanno id=null e rompono il drill-down).
+                val needFull = forceRefresh || allUtcs.isEmpty()
+
+                if (needFull) {
+                    // Carica tutte le tabelle in parallelo
+                    val catD   = async { api.getCategorie().data
                         ?.map { mapOf("id" to it.id, "descrizione" to it.descrizione, "attiva" to it.attiva) }
-                        ?: emptyList()
-                    ConfigTable.SOTTOCATEGORIA -> allSottocategorie = api.getSottocategorie().data ?: emptyList()
-                    ConfigTable.CONTO          -> allConti          = api.getConti().data ?: emptyList()
-                    ConfigTable.UC             -> allUc             = api.getUc(utente = currentUtente).data ?: emptyList()
-                    ConfigTable.UTCS           -> allUtcs           = api.getUtcs().data
-                        ?.filter { r -> java.lang.String(r["id_utente"]?.toString() ?: "").trim() == currentUtente }
-                        ?: emptyList()
+                        ?: emptyList<Map<String, Any?>>() }
+                    val contiD = async { api.getConti().data ?: emptyList() }
+                    val tipD   = async { api.getTipi().data ?: emptyList() }
+                    val sottD  = async { api.getSottocategorie().data ?: emptyList() }
+                    val ucD    = async { api.getUc(utente = currentUtente).data ?: emptyList() }
+                    val utcsD  = async { api.getUtcs().data ?: emptyList() }
+
+                    allCategorie      = catD.await()
+                    allConti          = contiD.await()
+                    allTipologie      = tipD.await()
+                    allSottocategorie = sottD.await()
+                    allUc             = ucD.await()
+                    allUtcs           = utcsD.await()
+                } else {
+                    // Cache tabelle già disponibile — ricarica solo UTCS
+                    allUtcs = api.getUtcs().data ?: emptyList()
                 }
-            } catch (e: Exception) {
-                errorMsg = e.message
-            } finally {
-                isRefreshing = false
-            }
+            } catch (e: Exception) { errorMsg = e.message }
+            finally { isLoading = false }
         }
     }
 
-    // Disattiva in cascata le voci correlate quando si disattiva un record
+    // ── Refresh mirato con filtri drill-down ──────────────────────────
+    fun refreshCurrentLevel() {
+        scope.launch {
+            isRefreshing = true; errorMsg = null
+            try {
+                // Ricarica sempre UTCS (fonte gerarchia) + la tabella corrente
+                val utcsD = async { api.getUtcs().data ?: emptyList() }
+                when {
+                    activeTab == ConfigTab.CONTI -> {
+                        allConti = api.getConti().data ?: emptyList()
+                        allUc    = api.getUc(utente = currentUtente).data ?: emptyList()
+                    }
+                    drillLevel == DrillLevel.TIPOLOGIA ->
+                        allTipologie = api.getTipi().data ?: emptyList()
+                    drillLevel == DrillLevel.CATEGORIA ->
+                        allCategorie = api.getCategorie().data
+                            ?.map { mapOf("id" to it.id, "descrizione" to it.descrizione, "attiva" to it.attiva) }
+                            ?: emptyList()
+                    else ->
+                        allSottocategorie = api.getSottocategorie().data ?: emptyList()
+                }
+                allUtcs = utcsD.await()
+            } catch (e: Exception) { errorMsg = e.message }
+            finally { isRefreshing = false }
+        }
+    }
+
+    // ── Cascade deactivate ────────────────────────────────────────────
     fun cascadeDeactivate(table: ConfigTable, recordId: Int) {
         scope.launch {
             try {
-                fun normalizeId(v: Any?): String =
-                    (v as? Double)?.toInt()?.toString() ?: v?.toString() ?: ""
-
                 val idStr = recordId.toString()
-
-                // Determina quali record UC/UTCS vanno disattivati
                 val toDeactivateUtcs = when (table) {
-                    ConfigTable.TIPOLOGIA     -> allUtcs.filter { normalizeId(it["id_tipologia"])     == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
-                    ConfigTable.CATEGORIA     -> allUtcs.filter { normalizeId(it["id_categoria"])     == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
-                    ConfigTable.SOTTOCATEGORIA -> allUtcs.filter { normalizeId(it["id_sottocategoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                    ConfigTable.TIPOLOGIA      -> allUtcs.filter { extractId(it["id_tipologia"])      == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                    ConfigTable.CATEGORIA      -> allUtcs.filter { extractId(it["id_categoria"])      == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                    ConfigTable.SOTTOCATEGORIA -> allUtcs.filter { extractId(it["id_sottocategoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
                     else -> emptyList()
                 }
                 val toDeactivateSottocat = when (table) {
-                    ConfigTable.CATEGORIA -> allSottocategorie.filter { normalizeId(it["id_categoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                    ConfigTable.CATEGORIA -> allSottocategorie.filter { extractId(it["id_categoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
                     else -> emptyList()
                 }
                 val toDeactivateUc = when (table) {
-                    ConfigTable.CONTO -> allUc.filter { normalizeId(it["id_conto"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                    ConfigTable.CONTO -> allUc.filter { extractId(it["id_conto"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
                     else -> emptyList()
                 }
-
                 val totalCount = toDeactivateUtcs.size + toDeactivateSottocat.size + toDeactivateUc.size
                 if (totalCount == 0) return@launch
 
-                // Disattiva in parallelo
                 val jobs = mutableListOf<kotlinx.coroutines.Deferred<*>>()
                 toDeactivateUtcs.forEach { r ->
                     val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
@@ -188,66 +310,178 @@ fun ConfigScreen(onBack: () -> Unit) {
                     jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UC.resource, id = rid, data = mapOf("attivo" to false))) }
                 }
                 jobs.awaitAll()
-
-                cascadeMsg = "$totalCount ${if (totalCount == 1) "voce correlata disattivata" else "voci correlate disattivate"}"
-                loadAllData()
-            } catch (e: Exception) {
-                errorMsg = e.message
-            }
+                snackMsg = "$totalCount ${if (totalCount == 1) "voce correlata disattivata" else "voci correlate disattivate"}"
+                loadAllData(forceRefresh = true)
+            } catch (e: Exception) { errorMsg = e.message }
         }
     }
 
-    // Carica tutti i dati una sola volta all'entrata nella schermata.
-    // Il cambio tabella usa la cache in memoria — nessuna chiamata di rete.
-    LaunchedEffect(Unit) {
-        loadAllData()
-    }
-
-    LaunchedEffect(cascadeMsg) {
-        cascadeMsg?.let {
-            snackbarHostState.showSnackbar(it)
-            cascadeMsg = null
-        }
-    }
+    // Carica all'avvio (UTCS sempre, resto se cache vuota)
+    LaunchedEffect(Unit) { loadAllData() }
 
     // ── Dialog Aggiungi / Modifica ────────────────────────────────────
     if (showAddDialog || showEditDialog) {
         ConfigRecordDialog(
-            table         = selectedTable,
-            record        = if (showEditDialog) selectedRecord else null,
-            currentUtente = currentUtente,
-            allCategorie  = allCategorie,
-            allConti      = allConti,
-            allTipologie  = allTipologie,
+            table             = dialogTable,
+            record            = if (showEditDialog) selectedRecord else null,
+            currentUtente     = currentUtente,
+            allCategorie      = allCategorie,
+            allConti          = allConti,
+            allTipologie      = allTipologie,
             allSottocategorie = allSottocategorie,
-            onDismiss     = { showAddDialog = false; showEditDialog = false },
-            onSave        = { data ->
+            preselectedTipoId = selectedTipo?.get("id")?.toString(),
+            preselectedCatId  = selectedCat?.get("id")?.toString(),
+            onDismiss         = { showAddDialog = false; showEditDialog = false },
+            onSave            = { data ->
                 scope.launch {
                     try {
                         if (showEditDialog && selectedRecord != null) {
+                            // ── MODIFICA: solo campi sicuri ───────────
                             val id = (selectedRecord!!["id"] as? Double)?.toInt()
                                 ?: selectedRecord!!["id"].toString().toIntOrNull() ?: return@launch
                             api.updateRecord(
                                 GenericUpdateRequest(
-                                    resource = selectedTable.resource,
+                                    resource = dialogTable.resource,
                                     id       = id,
-                                    data     = data.stripFormulaFields()
+                                    data     = data.safePayload().stripFormulaFields()
                                 )
                             )
+                            snackMsg = "Record aggiornato in ${dialogTable.label}"
                         } else {
-                            api.insertRecord(
+                            // ── INSERIMENTO ───────────────────────────
+                            val insertResp = api.insertRecord(
                                 GenericInsertRequest(
-                                    resource = selectedTable.resource,
-                                    data     = data.stripFormulaFields()
+                                    resource = dialogTable.resource,
+                                    data     = data.safePayload().stripFormulaFields()
                                 )
                             )
+
+                            // Recupera l'id del record appena creato
+                            val newId = insertResp.data
+                                ?.let { it["id"] ?: it["insertedId"] }
+                                ?.let { v -> (v as? Double)?.toInt()?.toString() ?: v.toString() }
+
+                            // ── Auto-associazione in base al tipo di record creato ──
+                            // Gli id in UTCS devono essere solo numerici (es. "1", "4")
+                            // non nel formato completo "1 - Debiti".
+                            // extractId() garantisce che prendiamo solo la parte numerica.
+
+                            when (dialogTable) {
+
+                                // Nuova Categoria → UTCS placeholder (sottocategoria vuota)
+                                // così la categoria è subito visibile nel drill-down.
+                                // I campi FK in UTCS devono essere nel formato "id - descrizione"
+                                // come tutti gli altri record esistenti nello sheet.
+                                ConfigTable.CATEGORIA -> {
+                                    // selectedTipo ha già il formato completo dal server (es. "2 - Reddito")
+                                    // Per la categoria appena creata costruiamo "newId - descrizione"
+                                    val tipoLabel = selectedTipo?.let {
+                                        val tid = extractId(it["id"])
+                                        val desc = it["descrizione"]?.toString() ?: ""
+                                        "$tid - $desc"
+                                    } ?: ""
+                                    val catLabel = if (newId != null) {
+                                        val desc = data["descrizione"]?.toString() ?: ""
+                                        "$newId - $desc"
+                                    } else ""
+                                    if (tipoLabel.isNotBlank() && catLabel.isNotBlank()) {
+                                        api.insertRecord(
+                                            GenericInsertRequest(
+                                                resource = ConfigTable.UTCS.resource,
+                                                data     = mapOf(
+                                                    "id_utente"         to currentUtente,
+                                                    "id_tipologia"      to tipoLabel,
+                                                    "id_categoria"      to catLabel,
+                                                    "id_sottocategoria" to "",
+                                                    "attivo"            to true
+                                                )
+                                            )
+                                        )
+                                    }
+                                }
+
+                                // Nuova Sottocategoria → cerca placeholder UTCS (sotto vuota)
+                                // Se esiste → update, altrimenti → insert nuovo record
+                                ConfigTable.SOTTOCATEGORIA -> {
+                                    val tipoLabel = selectedTipo?.let {
+                                        val tid = extractId(it["id"])
+                                        val desc = it["descrizione"]?.toString() ?: ""
+                                        "$tid - $desc"
+                                    } ?: ""
+                                    val catLabel = selectedCat?.let {
+                                        val cid = extractId(it["id"])
+                                        val desc = it["descrizione"]?.toString() ?: ""
+                                        "$cid - $desc"
+                                    } ?: ""
+                                    val sottoLabel = if (newId != null) {
+                                        val desc = data["descrizione"]?.toString() ?: ""
+                                        "$newId - $desc"
+                                    } else ""
+                                    if (tipoLabel.isNotBlank() && catLabel.isNotBlank() && sottoLabel.isNotBlank()) {
+                                        // Cerca placeholder: stessa tipo+cat, id_sottocategoria vuoto
+                                        val placeholder = allUtcs.firstOrNull { r ->
+                                            extractId(r["id_tipologia"]) == extractId(selectedTipo?.get("id")) &&
+                                                    extractId(r["id_categoria"])  == extractId(selectedCat?.get("id"))  &&
+                                                    (r["id_sottocategoria"]?.toString()?.isBlank() == true ||
+                                                            r["id_sottocategoria"] == null)
+                                        }
+                                        val placeholderId = placeholder?.get("id")?.let { v ->
+                                            (v as? Double)?.toInt() ?: v.toString().toDoubleOrNull()?.toInt()
+                                        }
+                                        if (placeholderId != null) {
+                                            // Aggiorna il placeholder esistente
+                                            api.updateRecord(
+                                                GenericUpdateRequest(
+                                                    resource = ConfigTable.UTCS.resource,
+                                                    id       = placeholderId,
+                                                    data     = mapOf(
+                                                        "id_sottocategoria" to sottoLabel,
+                                                        "attivo"            to true
+                                                    )
+                                                )
+                                            )
+                                        } else {
+                                            // Nessun placeholder → insert diretto
+                                            api.insertRecord(
+                                                GenericInsertRequest(
+                                                    resource = ConfigTable.UTCS.resource,
+                                                    data     = mapOf(
+                                                        "id_utente"         to currentUtente,
+                                                        "id_tipologia"      to tipoLabel,
+                                                        "id_categoria"      to catLabel,
+                                                        "id_sottocategoria" to sottoLabel,
+                                                        "attivo"            to true
+                                                    )
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Nuovo Conto → UC automatico
+                                ConfigTable.CONTO -> {
+                                    if (newId != null) {
+                                        api.insertRecord(
+                                            GenericInsertRequest(
+                                                resource = ConfigTable.UC.resource,
+                                                data     = mapOf(
+                                                    "id_utente" to currentUtente,
+                                                    "id_conto"  to newId,
+                                                    "attivo"    to true
+                                                )
+                                            )
+                                        )
+                                    }
+                                }
+
+                                else -> { /* Tipologia e altri: nessuna associazione automatica */ }
+                            }
+
+                            snackMsg = "Aggiunto in ${dialogTable.label}"
                         }
-                        showAddDialog  = false
-                        showEditDialog = false
-                        refreshSelectedTable()
-                    } catch (e: Exception) {
-                        errorMsg = e.message
-                    }
+                        showAddDialog = false; showEditDialog = false
+                        refreshCurrentLevel()
+                    } catch (e: Exception) { errorMsg = e.message }
                 }
             }
         )
@@ -261,69 +495,101 @@ fun ConfigScreen(onBack: () -> Unit) {
             text  = { Text("Confermi l'eliminazione? L'operazione è definitiva.") },
             confirmButton = {
                 TextButton(onClick = {
-                    scope.launch {
-                        try {
-                            val id = (selectedRecord!!["id"] as? Double)?.toInt()
-                                ?: selectedRecord!!["id"].toString().toIntOrNull() ?: return@launch
-                            api.deleteRecord(
-                                GenericDeleteRequest(resource = selectedTable.resource, id = id)
-                            )
-                            showDeleteConfirm = false
-                            refreshSelectedTable()
-                        } catch (e: Exception) {
-                            errorMsg = e.message
-                            showDeleteConfirm = false
+                    val id = (selectedRecord!!["id"] as? Double)?.toInt()
+                        ?: selectedRecord!!["id"].toString().toIntOrNull()
+                    if (id != null) {
+                        loadingRecordId = id.toString()
+                        scope.launch {
+                            try {
+                                api.deleteRecord(GenericDeleteRequest(resource = dialogTable.resource, id = id))
+                                snackMsg = "Record eliminato"
+                                showDeleteConfirm = false
+                                refreshCurrentLevel()
+                            } catch (e: Exception) {
+                                errorMsg = e.message
+                                showDeleteConfirm = false
+                            } finally { loadingRecordId = null }
                         }
                     }
                 }) { Text("Elimina", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Annulla") }
-            }
+            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Annulla") } }
         )
     }
 
-    // ── Scaffold ─────────────────────────────────────────────────────
+    // ── Scaffold ──────────────────────────────────────────────────────
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Gestione dati") },
+                title = {
+                    Column {
+                        Text("Gestione dati")
+                        Text(breadcrumb,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        if (canGoBack) {
+                            when (drillLevel) {
+                                DrillLevel.SOTTOCATEGORIA -> { drillLevel = DrillLevel.CATEGORIA;  selectedCat  = null }
+                                DrillLevel.CATEGORIA      -> { drillLevel = DrillLevel.TIPOLOGIA;  selectedTipo = null }
+                                else -> {}
+                            }
+                        } else onBack()
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro")
                     }
                 },
                 actions = {
                     IconButton(
-                        onClick  = { refreshSelectedTable() },
-                        enabled  = !isRefreshing && !isLoading
+                        onClick = { refreshCurrentLevel() },
+                        enabled = !isRefreshing && !isLoading
                     ) {
                         if (isRefreshing) {
                             CircularProgressIndicator(
-                                modifier  = androidx.compose.ui.Modifier.size(20.dp),
+                                modifier    = Modifier.size(20.dp),
                                 strokeWidth = 2.dp,
-                                color     = Brand
+                                color       = Brand
                             )
                         } else {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Aggiorna ${selectedTable.label}",
-                                tint = Brand
-                            )
+                            Icon(Icons.Default.Refresh, contentDescription = "Aggiorna", tint = Brand)
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
             )
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick        = { showAddDialog = true },
+                onClick        = {
+                    dialogTable   = currentTable
+                    showAddDialog = true
+                },
                 containerColor = Brand
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Aggiungi", tint = androidx.compose.ui.graphics.Color.White)
+                Icon(Icons.Default.Add, contentDescription = "Aggiungi", tint = Color.White)
+            }
+        },
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = activeTab == ConfigTab.UTCS,
+                    onClick  = {
+                        activeTab    = ConfigTab.UTCS
+                        drillLevel   = DrillLevel.TIPOLOGIA
+                        selectedTipo = null; selectedCat = null
+                    },
+                    icon  = {},
+                    label = { Text("UTCS") }
+                )
+                NavigationBarItem(
+                    selected = activeTab == ConfigTab.CONTI,
+                    onClick  = { activeTab = ConfigTab.CONTI },
+                    icon  = {},
+                    label = { Text("Conti") }
+                )
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -333,110 +599,75 @@ fun ConfigScreen(onBack: () -> Unit) {
                 .padding(padding)
                 .fillMaxSize()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-
-            // ── Dropdown selezione tabella ────────────────────────────
-            ExposedDropdownMenuBox(
-                expanded        = tableExpanded,
-                onExpandedChange = { tableExpanded = !tableExpanded }
-            ) {
-                OutlinedTextField(
-                    value         = selectedTable.label,
-                    onValueChange = { },
-                    readOnly      = true,
-                    label         = { Text("Tabella") },
-                    modifier      = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
-                    trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = tableExpanded) },
-                    colors        = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        focusedContainerColor   = MaterialTheme.colorScheme.surfaceVariant,
-                        focusedBorderColor      = Brand,
-                        focusedLabelColor       = Brand
-                    )
-                )
-                ExposedDropdownMenu(
-                    expanded        = tableExpanded,
-                    onDismissRequest = { tableExpanded = false }
-                ) {
-                    ConfigTable.entries
-                        .filter { it != ConfigTable.UC && it != ConfigTable.UTCS }
-                        .forEach { table ->
-                            DropdownMenuItem(
-                                text    = { Text(table.label) },
-                                onClick = {
-                                    selectedTable  = table
-                                    tableExpanded  = false
-                                }
-                            )
-                        }
-                }
-            }
-
-            // ── Errore ────────────────────────────────────────────────
             errorMsg?.let { err ->
                 ElevatedCard(
                     modifier = Modifier.fillMaxWidth(),
-                    colors   = CardDefaults.elevatedCardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
+                    colors   = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                 ) {
-                    Text(
-                        "Errore: $err",
-                        modifier = Modifier.padding(12.dp),
-                        style    = MaterialTheme.typography.bodySmall,
-                        color    = MaterialTheme.colorScheme.onErrorContainer
-                    )
+                    Text("Errore: $err", modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
 
-            // ── Loading ───────────────────────────────────────────────
-            if (isLoading) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth(),
-                    color    = Brand
-                )
-            }
+            if (isLoading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Brand)
 
-            // ── Contatore ─────────────────────────────────────────────
-            Text(
-                "${records.size} record",
+            Text("${currentList.size} elementi",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-            // ── Lista record ──────────────────────────────────────────
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding      = PaddingValues(bottom = 88.dp)
+                contentPadding      = PaddingValues(bottom = 120.dp)
             ) {
-                items(records) { record ->
+                items(currentList, key = { recordId(it).ifBlank { it.hashCode().toString() } }) { record ->
+                    val isDrillable = activeTab == ConfigTab.UTCS &&
+                            drillLevel != DrillLevel.SOTTOCATEGORIA
+                    val thisId = recordId(record)
+
                     ConfigRecordCard(
-                        table    = selectedTable,
-                        record   = record,
-                        onEdit   = { selectedRecord = record; showEditDialog = true },
-                        onDelete = { selectedRecord = record; showDeleteConfirm = true },
+                        table          = currentTable,
+                        record         = record,
+                        isDrillable    = isDrillable,
+                        isLoading      = loadingRecordId == thisId && thisId.isNotBlank(),
+                        onDrillDown    = {
+                            when (drillLevel) {
+                                DrillLevel.TIPOLOGIA -> { selectedTipo = record; drillLevel = DrillLevel.CATEGORIA }
+                                DrillLevel.CATEGORIA -> { selectedCat  = record; drillLevel = DrillLevel.SOTTOCATEGORIA }
+                                else -> {}
+                            }
+                        },
+                        onEdit   = {
+                            dialogTable    = currentTable
+                            selectedRecord = record
+                            showEditDialog = true
+                        },
+                        onDelete = {
+                            dialogTable    = currentTable
+                            selectedRecord = record
+                            showDeleteConfirm = true
+                        },
                         onToggleAttivo = { newVal ->
+                            loadingRecordId = thisId
                             scope.launch {
                                 try {
                                     val id = (record["id"] as? Double)?.toInt()
                                         ?: record["id"].toString().toIntOrNull() ?: return@launch
-                                    val attivoKey = if (selectedTable == ConfigTable.CATEGORIA) "attiva" else "attivo"
+                                    // Invia SOLO il campo attivo — nessun altro campo
+                                    val attivoKey = if (currentTable == ConfigTable.CATEGORIA) "attiva" else "attivo"
                                     api.updateRecord(
                                         GenericUpdateRequest(
-                                            resource = selectedTable.resource,
+                                            resource = currentTable.resource,
                                             id       = id,
                                             data     = mapOf(attivoKey to newVal)
                                         )
                                     )
-                                    // Se si disattiva, propaga la disattivazione alle voci correlate
-                                    if (!newVal) cascadeDeactivate(selectedTable, id)
-                                    refreshSelectedTable()
-                                } catch (e: Exception) {
-                                    errorMsg = e.message
-                                }
+                                    if (!newVal) cascadeDeactivate(currentTable, id)
+                                    else refreshCurrentLevel()
+                                } catch (e: Exception) { errorMsg = e.message }
+                                finally { loadingRecordId = null }
                             }
                         }
                     )
@@ -451,27 +682,37 @@ fun ConfigScreen(onBack: () -> Unit) {
 private fun ConfigRecordCard(
     table: ConfigTable,
     record: Map<String, Any?>,
+    isDrillable: Boolean,
+    isLoading: Boolean,
+    onDrillDown: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggleAttivo: (Boolean) -> Unit
 ) {
-    val id          = (record["id"] as? Double)?.toInt() ?: record["id"]?.toString()?.toIntOrNull()
-    val attivoKey   = if (table == ConfigTable.CATEGORIA) "attiva" else "attivo"
-    val attivoRaw   = record[attivoKey]
-    val attivo      = attivoRaw == true || attivoRaw?.toString()?.lowercase() == "true"
+    val id = when (val raw = record["id"]) {
+        is Double -> raw.toInt()
+        is Int    -> raw
+        is Long   -> raw.toInt()
+        is String -> raw.toDoubleOrNull()?.toInt() ?: raw.toIntOrNull()
+        else      -> null
+    }
+    val attivoKey = if (table == ConfigTable.CATEGORIA) "attiva" else "attivo"
+    val attivoRaw = record[attivoKey]
+    val attivo    = attivoRaw == true || attivoRaw?.toString()?.lowercase() == "true"
 
-    // Testo principale in base alla tabella
     val mainText = when (table) {
-        ConfigTable.TIPOLOGIA      -> "${id} - ${record["descrizione"] ?: "—"} [${record["tipo_movimento"] ?: "uscita"}]"
-        ConfigTable.CATEGORIA      -> "${id} - ${record["descrizione"] ?: "—"}"
-        ConfigTable.SOTTOCATEGORIA -> "${id} - ${record["descrizione"] ?: "—"} (cat: ${record["id_categoria"] ?: "—"})"
-        ConfigTable.CONTO          -> "${id} - ${record["descrizione"] ?: "—"}"
+        ConfigTable.TIPOLOGIA      -> "${record["descrizione"] ?: "—"} [${record["tipo_movimento"]}]"
+        ConfigTable.CATEGORIA      -> "${record["descrizione"] ?: "—"}"
+        ConfigTable.SOTTOCATEGORIA -> "${record["descrizione"] ?: "—"}"
+        ConfigTable.CONTO          -> "${record["descrizione"] ?: "—"}"
         ConfigTable.UC             -> "${record["id_utente"] ?: "—"} → ${record["id_conto"] ?: "—"}"
         ConfigTable.UTCS           -> "${record["id_tipologia"] ?: "—"} / ${record["id_categoria"] ?: "—"} / ${record["id_sottocategoria"] ?: "—"}"
     }
 
     ElevatedCard(
-        modifier  = Modifier.fillMaxWidth(),
+        modifier  = Modifier
+            .fillMaxWidth()
+            .then(if (isDrillable && !isLoading) Modifier.clickable { onDrillDown() } else Modifier),
         colors    = CardDefaults.elevatedCardColors(
             containerColor = if (attivo) MaterialTheme.colorScheme.surface
             else MaterialTheme.colorScheme.surfaceVariant
@@ -486,51 +727,60 @@ private fun ConfigRecordCard(
             verticalAlignment     = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    mainText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (attivo) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    if (attivo) "Attivo" else "Disattivo",
+                Text(mainText,
+                    style      = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (isDrillable) FontWeight.Medium else FontWeight.Normal,
+                    color      = if (attivo) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (attivo) "Attivo" else "Disattivo",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (attivo) Brand else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                    color = if (attivo) Brand else MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Toggle attivo
-                Switch(
-                    checked         = attivo,
-                    onCheckedChange = onToggleAttivo,
-                    modifier        = Modifier.padding(end = 4.dp),
-                    colors          = SwitchDefaults.colors(
-                        checkedThumbColor = Brand,
-                        checkedTrackColor = Brand.copy(alpha = 0.4f)
-                    )
+            // Loading spinner sulla card durante operazione
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier    = Modifier.size(24.dp).padding(end = 4.dp),
+                    strokeWidth = 2.dp,
+                    color       = Brand
                 )
-                // Modifica
-                IconButton(onClick = onEdit) {
-                    Icon(
-                        Icons.Default.Edit,
-                        contentDescription = "Modifica",
-                        tint   = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked         = attivo,
+                        onCheckedChange = onToggleAttivo,
+                        modifier        = Modifier.padding(end = 4.dp),
+                        colors          = SwitchDefaults.colors(
+                            checkedThumbColor = Brand,
+                            checkedTrackColor = Brand.copy(alpha = 0.4f)
+                        )
                     )
-                }
-                // Elimina
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Elimina",
-                        tint   = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Default.Edit, contentDescription = "Modifica",
+                            tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Default.Delete, contentDescription = "Elimina",
+                            tint     = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp))
+                    }
+                    if (isDrillable) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "Apri",
+                            tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         }
     }
+}
+
+// ── Helper condiviso (usato anche nel dialog) ────────────────────────
+private fun extractIdStatic(v: Any?): String {
+    val raw = (v as? Double)?.toInt()?.toString() ?: v?.toString() ?: ""
+    return raw.split(" - ").first().trim()
 }
 
 // ── Dialog aggiungi / modifica ────────────────────────────────────────
@@ -538,26 +788,32 @@ private fun ConfigRecordCard(
 @Composable
 private fun ConfigRecordDialog(
     table: ConfigTable,
-    record: Map<String, Any?>?,         // null = nuovo
+    record: Map<String, Any?>?,
     currentUtente: String,
     allCategorie: List<Map<String, Any?>>,
     allConti: List<Map<String, Any?>>,
     allTipologie: List<Map<String, Any?>>,
     allSottocategorie: List<Map<String, Any?>>,
+    preselectedTipoId: String? = null,
+    preselectedCatId:  String? = null,
     onDismiss: () -> Unit,
     onSave: (Map<String, Any?>) -> Unit
 ) {
     val isNew = record == null
 
-    // Campi del form — inizializzati dal record esistente o vuoti
-    var descrizione    by remember { mutableStateOf(record?.get("descrizione")?.toString() ?: "") }
-    var tipoMovimento  by remember { mutableStateOf(record?.get("tipo_movimento")?.toString() ?: "uscita") }
-    var idCategoria    by remember { mutableStateOf(record?.get("id_categoria")?.toString() ?: "") }
-    var idConto        by remember { mutableStateOf(record?.get("id_conto")?.toString() ?: "") }
-    var idTipologia    by remember { mutableStateOf(record?.get("id_tipologia")?.toString() ?: "") }
+    var descrizione      by remember { mutableStateOf(record?.get("descrizione")?.toString() ?: "") }
+    var tipoMovimento    by remember { mutableStateOf(record?.get("tipo_movimento")?.toString() ?: "uscita") }
+    // idCategoria: se preselectedCatId è solo un numero, cerca il label completo "id - desc"
+    val preselectedCatLabel = preselectedCatId?.let { pid ->
+        allCategorie.firstOrNull { extractIdStatic(it["id"]) == pid }
+            ?.let { cat -> "${extractIdStatic(cat["id"])} - ${cat["descrizione"]}" }
+            ?: pid
+    }
+    var idCategoria      by remember { mutableStateOf(record?.get("id_categoria")?.toString() ?: preselectedCatLabel ?: "") }
+    var idConto          by remember { mutableStateOf(record?.get("id_conto")?.toString() ?: "") }
+    var idTipologia      by remember { mutableStateOf(record?.get("id_tipologia")?.toString() ?: preselectedTipoId ?: "") }
     var idSottocategoria by remember { mutableStateOf(record?.get("id_sottocategoria")?.toString() ?: "") }
 
-    // Dropdown expanded states
     var tipoMovExpanded  by remember { mutableStateOf(false) }
     var catExpanded      by remember { mutableStateOf(false) }
     var contoExpanded    by remember { mutableStateOf(false) }
@@ -566,231 +822,133 @@ private fun ConfigRecordDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(if (isNew) "Nuovo record — ${table.label}" else "Modifica record")
-        },
-        text = {
+        title = { Text(if (isNew) "Nuovo — ${table.label}" else "Modifica record") },
+        text  = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-
                 when (table) {
 
-                    // ── TIPOLOGIA ─────────────────────────────────────
                     ConfigTable.TIPOLOGIA -> {
-                        OutlinedTextField(
-                            value         = descrizione,
-                            onValueChange = { descrizione = it },
-                            label         = { Text("Descrizione") },
-                            modifier      = Modifier.fillMaxWidth(),
-                            singleLine    = true
-                        )
-                        // Dropdown tipo_movimento
-                        ExposedDropdownMenuBox(
-                            expanded        = tipoMovExpanded,
-                            onExpandedChange = { tipoMovExpanded = !tipoMovExpanded }
-                        ) {
-                            OutlinedTextField(
-                                value         = tipoMovimento,
-                                onValueChange = { },
-                                readOnly      = true,
-                                label         = { Text("Tipo movimento") },
-                                modifier      = Modifier.fillMaxWidth()
-                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
-                                trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(tipoMovExpanded) }
-                            )
-                            ExposedDropdownMenu(
-                                expanded        = tipoMovExpanded,
-                                onDismissRequest = { tipoMovExpanded = false }
-                            ) {
+                        OutlinedTextField(value = descrizione, onValueChange = { descrizione = it },
+                            label = { Text("Descrizione") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        ExposedDropdownMenuBox(expanded = tipoMovExpanded, onExpandedChange = { tipoMovExpanded = !tipoMovExpanded }) {
+                            OutlinedTextField(value = tipoMovimento, onValueChange = {}, readOnly = true,
+                                label = { Text("Tipo movimento") },
+                                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(tipoMovExpanded) })
+                            ExposedDropdownMenu(expanded = tipoMovExpanded, onDismissRequest = { tipoMovExpanded = false }) {
                                 listOf("uscita", "entrata").forEach { opt ->
-                                    DropdownMenuItem(
-                                        text    = { Text(opt) },
-                                        onClick = { tipoMovimento = opt; tipoMovExpanded = false }
-                                    )
+                                    DropdownMenuItem(text = { Text(opt) },
+                                        onClick = { tipoMovimento = opt; tipoMovExpanded = false })
                                 }
                             }
                         }
                     }
 
-                    // ── CATEGORIA ─────────────────────────────────────
                     ConfigTable.CATEGORIA -> {
-                        OutlinedTextField(
-                            value         = descrizione,
-                            onValueChange = { descrizione = it },
-                            label         = { Text("Descrizione") },
-                            modifier      = Modifier.fillMaxWidth(),
-                            singleLine    = true
-                        )
+                        OutlinedTextField(value = descrizione, onValueChange = { descrizione = it },
+                            label = { Text("Descrizione") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
 
-                    // ── SOTTOCATEGORIA ────────────────────────────────
                     ConfigTable.SOTTOCATEGORIA -> {
-                        // Dropdown categoria
-                        ExposedDropdownMenuBox(
-                            expanded        = catExpanded,
-                            onExpandedChange = { catExpanded = !catExpanded }
-                        ) {
+                        // Categoria pre-selezionata dal contesto drill-down (read-only se preselezionata)
+                        if (preselectedCatId != null && isNew) {
+                            val catLabel = allCategorie.firstOrNull {
+                                it["id"]?.toString()?.trimEnd('0')?.trimEnd('.') == preselectedCatId
+                            }?.get("descrizione")?.toString() ?: preselectedCatId
                             OutlinedTextField(
-                                value         = idCategoria.ifBlank { "Seleziona categoria…" },
-                                onValueChange = { },
+                                value         = catLabel,
+                                onValueChange = {},
                                 readOnly      = true,
                                 label         = { Text("Categoria") },
-                                modifier      = Modifier.fillMaxWidth()
-                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
-                                trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(catExpanded) }
+                                modifier      = Modifier.fillMaxWidth(),
+                                colors        = OutlinedTextFieldDefaults.colors(
+                                    disabledTextColor       = MaterialTheme.colorScheme.onSurface,
+                                    disabledBorderColor     = MaterialTheme.colorScheme.outline,
+                                    disabledLabelColor      = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                enabled = false
                             )
-                            ExposedDropdownMenu(
-                                expanded        = catExpanded,
-                                onDismissRequest = { catExpanded = false }
-                            ) {
-                                allCategorie.forEach { cat ->
-                                    val label = "${cat["id"]} - ${cat["descrizione"]}"
-                                    DropdownMenuItem(
-                                        text    = { Text(label) },
-                                        onClick = { idCategoria = label; catExpanded = false }
-                                    )
+                        } else {
+                            ExposedDropdownMenuBox(expanded = catExpanded, onExpandedChange = { catExpanded = !catExpanded }) {
+                                OutlinedTextField(value = idCategoria.ifBlank { "Seleziona categoria…" },
+                                    onValueChange = {}, readOnly = true, label = { Text("Categoria") },
+                                    modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(catExpanded) })
+                                ExposedDropdownMenu(expanded = catExpanded, onDismissRequest = { catExpanded = false }) {
+                                    allCategorie.forEach { cat ->
+                                        val lbl = "${cat["id"]} - ${cat["descrizione"]}"
+                                        DropdownMenuItem(text = { Text(lbl) },
+                                            onClick = { idCategoria = lbl; catExpanded = false })
+                                    }
                                 }
                             }
                         }
-                        OutlinedTextField(
-                            value         = descrizione,
-                            onValueChange = { descrizione = it },
-                            label         = { Text("Descrizione") },
-                            modifier      = Modifier.fillMaxWidth(),
-                            singleLine    = true
-                        )
+                        OutlinedTextField(value = descrizione, onValueChange = { descrizione = it },
+                            label = { Text("Descrizione") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
 
-                    // ── CONTO ─────────────────────────────────────────
                     ConfigTable.CONTO -> {
-                        OutlinedTextField(
-                            value         = descrizione,
-                            onValueChange = { descrizione = it },
-                            label         = { Text("Descrizione") },
-                            modifier      = Modifier.fillMaxWidth(),
-                            singleLine    = true
-                        )
+                        OutlinedTextField(value = descrizione, onValueChange = { descrizione = it },
+                            label = { Text("Descrizione") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
 
-                    // ── UC ────────────────────────────────────────────
                     ConfigTable.UC -> {
-                        Text(
-                            "Utente: $currentUtente",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        ExposedDropdownMenuBox(
-                            expanded        = contoExpanded,
-                            onExpandedChange = { contoExpanded = !contoExpanded }
-                        ) {
-                            OutlinedTextField(
-                                value         = idConto.ifBlank { "Seleziona conto…" },
-                                onValueChange = { },
-                                readOnly      = true,
-                                label         = { Text("Conto") },
-                                modifier      = Modifier.fillMaxWidth()
-                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
-                                trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(contoExpanded) }
-                            )
-                            ExposedDropdownMenu(
-                                expanded        = contoExpanded,
-                                onDismissRequest = { contoExpanded = false }
-                            ) {
+                        Text("Utente: $currentUtente", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        ExposedDropdownMenuBox(expanded = contoExpanded, onExpandedChange = { contoExpanded = !contoExpanded }) {
+                            OutlinedTextField(value = idConto.ifBlank { "Seleziona conto…" },
+                                onValueChange = {}, readOnly = true, label = { Text("Conto") },
+                                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(contoExpanded) })
+                            ExposedDropdownMenu(expanded = contoExpanded, onDismissRequest = { contoExpanded = false }) {
                                 allConti.forEach { conto ->
-                                    val label = "${conto["id"]} - ${conto["descrizione"]}"
-                                    DropdownMenuItem(
-                                        text    = { Text(label) },
-                                        onClick = { idConto = label; contoExpanded = false }
-                                    )
+                                    val lbl = "${conto["id"]} - ${conto["descrizione"]}"
+                                    DropdownMenuItem(text = { Text(lbl) },
+                                        onClick = { idConto = lbl; contoExpanded = false })
                                 }
                             }
                         }
                     }
 
-                    // ── UTCS ──────────────────────────────────────────
                     ConfigTable.UTCS -> {
-                        Text(
-                            "Utente: $currentUtente",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        // Tipologia
-                        ExposedDropdownMenuBox(
-                            expanded        = tipoExpanded,
-                            onExpandedChange = { tipoExpanded = !tipoExpanded }
-                        ) {
-                            OutlinedTextField(
-                                value         = idTipologia.ifBlank { "Seleziona tipologia…" },
-                                onValueChange = { },
-                                readOnly      = true,
-                                label         = { Text("Tipologia") },
-                                modifier      = Modifier.fillMaxWidth()
-                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
-                                trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(tipoExpanded) }
-                            )
-                            ExposedDropdownMenu(
-                                expanded        = tipoExpanded,
-                                onDismissRequest = { tipoExpanded = false }
-                            ) {
+                        Text("Utente: $currentUtente", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        ExposedDropdownMenuBox(expanded = tipoExpanded, onExpandedChange = { tipoExpanded = !tipoExpanded }) {
+                            OutlinedTextField(value = idTipologia.ifBlank { "Seleziona tipologia…" },
+                                onValueChange = {}, readOnly = true, label = { Text("Tipologia") },
+                                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(tipoExpanded) })
+                            ExposedDropdownMenu(expanded = tipoExpanded, onDismissRequest = { tipoExpanded = false }) {
                                 allTipologie.forEach { tip ->
-                                    val label = "${tip["id"]} - ${tip["descrizione"]}"
-                                    DropdownMenuItem(
-                                        text    = { Text(label) },
-                                        onClick = { idTipologia = label; tipoExpanded = false }
-                                    )
+                                    val lbl = "${tip["id"]} - ${tip["descrizione"]}"
+                                    DropdownMenuItem(text = { Text(lbl) },
+                                        onClick = { idTipologia = lbl; tipoExpanded = false })
                                 }
                             }
                         }
-                        // Categoria
-                        ExposedDropdownMenuBox(
-                            expanded        = catExpanded,
-                            onExpandedChange = { catExpanded = !catExpanded }
-                        ) {
-                            OutlinedTextField(
-                                value         = idCategoria.ifBlank { "Seleziona categoria…" },
-                                onValueChange = { },
-                                readOnly      = true,
-                                label         = { Text("Categoria") },
-                                modifier      = Modifier.fillMaxWidth()
-                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
-                                trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(catExpanded) }
-                            )
-                            ExposedDropdownMenu(
-                                expanded        = catExpanded,
-                                onDismissRequest = { catExpanded = false }
-                            ) {
+                        ExposedDropdownMenuBox(expanded = catExpanded, onExpandedChange = { catExpanded = !catExpanded }) {
+                            OutlinedTextField(value = idCategoria.ifBlank { "Seleziona categoria…" },
+                                onValueChange = {}, readOnly = true, label = { Text("Categoria") },
+                                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(catExpanded) })
+                            ExposedDropdownMenu(expanded = catExpanded, onDismissRequest = { catExpanded = false }) {
                                 allCategorie.forEach { cat ->
-                                    val label = "${cat["id"]} - ${cat["descrizione"]}"
-                                    DropdownMenuItem(
-                                        text    = { Text(label) },
-                                        onClick = { idCategoria = label; catExpanded = false }
-                                    )
+                                    val lbl = "${cat["id"]} - ${cat["descrizione"]}"
+                                    DropdownMenuItem(text = { Text(lbl) },
+                                        onClick = { idCategoria = lbl; catExpanded = false })
                                 }
                             }
                         }
-                        // Sottocategoria
-                        ExposedDropdownMenuBox(
-                            expanded        = sottoExpanded,
-                            onExpandedChange = { sottoExpanded = !sottoExpanded }
-                        ) {
-                            OutlinedTextField(
-                                value         = idSottocategoria.ifBlank { "Seleziona sottocategoria…" },
-                                onValueChange = { },
-                                readOnly      = true,
-                                label         = { Text("Sottocategoria") },
-                                modifier      = Modifier.fillMaxWidth()
-                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
-                                trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(sottoExpanded) }
-                            )
-                            ExposedDropdownMenu(
-                                expanded        = sottoExpanded,
-                                onDismissRequest = { sottoExpanded = false }
-                            ) {
+                        ExposedDropdownMenuBox(expanded = sottoExpanded, onExpandedChange = { sottoExpanded = !sottoExpanded }) {
+                            OutlinedTextField(value = idSottocategoria.ifBlank { "Seleziona sottocategoria…" },
+                                onValueChange = {}, readOnly = true, label = { Text("Sottocategoria") },
+                                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(sottoExpanded) })
+                            ExposedDropdownMenu(expanded = sottoExpanded, onDismissRequest = { sottoExpanded = false }) {
                                 allSottocategorie.forEach { sotto ->
-                                    val label = "${sotto["id"]} - ${sotto["descrizione"]}"
-                                    DropdownMenuItem(
-                                        text    = { Text(label) },
-                                        onClick = { idSottocategoria = label; sottoExpanded = false }
-                                    )
+                                    val lbl = "${sotto["id"]} - ${sotto["descrizione"]}"
+                                    DropdownMenuItem(text = { Text(lbl) },
+                                        onClick = { idSottocategoria = lbl; sottoExpanded = false })
                                 }
                             }
                         }
@@ -800,7 +958,7 @@ private fun ConfigRecordDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                // Costruisce il payload in base alla tabella
+                // Payload pulito — solo i campi editabili della tabella
                 val payload: Map<String, Any?> = when (table) {
                     ConfigTable.TIPOLOGIA      -> mapOf(
                         "descrizione"    to descrizione.trim(),
@@ -826,18 +984,16 @@ private fun ConfigRecordDialog(
                         "attivo"    to true
                     )
                     ConfigTable.UTCS           -> mapOf(
-                        "id_utente"        to currentUtente,
-                        "id_tipologia"     to idTipologia.trim(),
-                        "id_categoria"     to idCategoria.trim(),
+                        "id_utente"         to currentUtente,
+                        "id_tipologia"      to idTipologia.trim(),
+                        "id_categoria"      to idCategoria.trim(),
                         "id_sottocategoria" to idSottocategoria.trim(),
-                        "attivo"           to true
+                        "attivo"            to true
                     )
                 }
                 onSave(payload)
             }) { Text("Salva", color = Brand) }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Annulla") }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annulla") } }
     )
 }

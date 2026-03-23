@@ -14,6 +14,7 @@
  */
 package com.emanuele.gestionespese.data.repo
 
+import android.util.Log
 import com.emanuele.gestionespese.data.local.LookupDao
 import com.emanuele.gestionespese.data.local.SpesaDao
 import com.emanuele.gestionespese.data.local.entities.*
@@ -23,6 +24,7 @@ import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.data.remote.SupabaseApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.supervisorScope
+import java.io.IOException
 
 /**
  * Repository per spese e lookup. Dipende da [SupabaseApi], [LookupDao] e [SpesaDao].
@@ -94,49 +96,59 @@ class SpeseRepository(
             syncAll(utente)
             return
         }
+        Log.d("SYNC_DEBUG", "conti raw=${data.conti?.size}")
+        Log.d("SYNC_DEBUG", "utcs raw=${data.utcs?.size}")
+        Log.d("SYNC_DEBUG", "primi conti=${data.conti?.take(3)}")
+        Log.d("SYNC_DEBUG", "primi utcs=${data.utcs?.take(3)}")
 
         // ── Parse tipologie ───────────────────────────────────────────────
         val tipiRawList = data.tipologie ?: emptyList()
-        val tipiList = tipiRawList
-            .filter { it.isActiveDefaultTrue() }
-            .mapNotNull {
-                buildLabel(
-                    it.firstNonBlank("id")?.numToCleanString(),
-                    it.firstNonBlank("descrizione", "nome", "label")
-                )
-            }
-            .distinct().sorted()
+        val tipiList = tipiRawList.mapNotNull { m ->
+            val label = buildLabel(
+                m.firstNonBlank("id")?.numToCleanString(),
+                m.firstNonBlank("descrizione", "nome", "label")
+            ) ?: return@mapNotNull null
+            TipoEntity(
+                value         = label,
+                attivo        = m.isActiveDefaultTrue(),
+                tipoMovimento = m.firstNonBlank("tipo_movimento", "TIPO_MOVIMENTO") ?: "uscita"
+            )
+        }.distinct().sortedBy { it.value }
 
         // ── Parse categorie ───────────────────────────────────────────────
-        val categorieList = (data.categorie ?: emptyList())
-            .filter { it.isActiveDefaultTrue() }
-            .mapNotNull { m ->
-                buildLabel(
-                    m.firstNonBlank("id")?.numToCleanString(),
-                    m.firstNonBlank("descrizione", "nome", "label")
-                )
-            }
-            .distinct().sorted()
+        val categorieList = (data.categorie ?: emptyList()).mapNotNull { m ->
+            var label = buildLabel(
+                m.firstNonBlank("id")?.numToCleanString(),
+                m.firstNonBlank("descrizione", "nome", "label")
+            ) ?: return@mapNotNull null
+            CategoriaEntity(value = label, attivo = m.isActiveDefaultTrue())
+        }.distinct().sortedBy { it.value }
 
         // ── Parse sottocategorie ──────────────────────────────────────────
-        val sottoList = (data.sottocategorie ?: emptyList())
-            .filter { it.isActiveDefaultTrue() }
-            .mapNotNull { m ->
-                val catId = m.firstNonBlank("id_categoria", "categoria", "idCategoria")?.numToCleanString()
-                val sub   = m.firstNonBlank("descrizione", "sottocategoria", "nome", "label")
-                if (catId.isNullOrBlank() || sub.isNullOrBlank()) null
-                else SottoCatItem(categoria = catId.trim(), sottocategoria = sub.trim())
-            }
-            .distinctBy { it.categoria.lowercase() + "||" + it.sottocategoria.lowercase() }
-            .sortedWith(compareBy({ it.categoria.toIntOrNull() ?: Int.MAX_VALUE }, { it.sottocategoria.lowercase() }))
+        val sottoList = (data.sottocategorie ?: emptyList()).mapNotNull { m ->
+            val catId = m.firstNonBlank("id_categoria", "categoria", "idCategoria")?.numToCleanString()
+            val sub   = m.firstNonBlank("descrizione", "sottocategoria", "nome", "label")
+            if (catId.isNullOrBlank() || sub.isNullOrBlank()) return@mapNotNull null
+            SottoCategoriaEntity(
+                key            = sottoKey(catId.trim(), sub.trim()),
+                id             = m.firstNonBlank("id")?.numToCleanString()?.toIntOrNull() ?: 0, // ← aggiunto
+                categoria      = catId.trim(),
+                sottocategoria = sub.trim(),
+                attivo         = m.isActiveDefaultTrue()
+            )
+        }.distinctBy { it.key }
 
         // ── Parse conti ───────────────────────────────────────────────────
-        val contiList = (data.conti ?: emptyList())
-            .filter { it.isActiveDefaultTrue() }
-            .mapNotNull { m -> m.firstNonBlank("id_conto", "ID_CONTO")?.trim() }
-            .distinct().sorted()
+        val contiList = (data.conti ?: emptyList()).mapNotNull { m ->
+            val label = m.firstNonBlank("id_conto", "ID_CONTO", "id_definizione_attivo")?.trim() ?: return@mapNotNull null
+            ContoEntity(
+                value    = label,
+                utenteId = utente,
+                attivo   = m.isActiveDefaultTrue()
+            )
+        }.distinct()
 
-        // ── Parse UTCs ────────────────────────────────────────────────────
+        //── Parse UTCs ────────────────────────────────────────────────────
         val tipologiaTipoMap: Map<String, String> = tipiRawList.associate { m ->
             val label = buildLabel(
                 m.firstNonBlank("id")?.numToCleanString(),
@@ -170,19 +182,13 @@ class SpeseRepository(
 
         // ── Scrittura su Room ─────────────────────────────────────────────
         lookupDao.clearTipi()
-        lookupDao.upsertTipi(tipiList.map { TipoEntity(it) })
+        lookupDao.upsertTipi(tipiList)
         lookupDao.clearCategorie()
-        lookupDao.upsertCategorie(categorieList.map { CategoriaEntity(it) })
+        lookupDao.upsertCategorie(categorieList)
         lookupDao.clearConti()
-        lookupDao.upsertConti(contiList.map { ContoEntity(value = it, utenteId = utente) })
+        lookupDao.upsertConti(contiList)
         lookupDao.clearSottocategorie()
-        lookupDao.upsertSottocategorie(sottoList.map {
-            SottoCategoriaEntity(
-                key            = sottoKey(it.categoria, it.sottocategoria),
-                categoria      = it.categoria.trim(),
-                sottocategoria = it.sottocategoria.trim()
-            )
-        })
+        lookupDao.upsertSottocategorie(sottoList)
         lookupDao.clearUtcs()
         lookupDao.upsertUtcs(utcEntities)
 
@@ -291,7 +297,7 @@ class SpeseRepository(
     }
 
     /** Scarica e filtra le sottocategorie attive dal backend. */
-    private suspend fun getSottocategorie(): List<SottoCatItem> {
+    private suspend fun getSottocategorie(): List<SottoCategoriaEntity> {
         val rows: List<Map<String, Any?>> = api.getSottocategorie().data ?: emptyList()
         return rows
             .filter { it.isActiveDefaultTrue() }
@@ -299,9 +305,15 @@ class SpeseRepository(
                 val catId = m.firstNonBlank("id_categoria", "categoria", "idCategoria")?.numToCleanString()
                 val sub   = m.firstNonBlank("descrizione", "sottocategoria", "nome", "label")
                 if (catId.isNullOrBlank() || sub.isNullOrBlank()) null
-                else SottoCatItem(categoria = catId.trim(), sottocategoria = sub.trim())
+                else SottoCategoriaEntity(
+                    key            = sottoKey(catId.trim(), sub.trim()),
+                    id             = m.firstNonBlank("id")?.numToCleanString()?.toIntOrNull() ?: 0,
+                    categoria      = catId.trim(),
+                    sottocategoria = sub.trim(),
+                    attivo         = m.isActiveDefaultTrue()
+                )
             }
-            .distinctBy { it.categoria.lowercase() + "||" + it.sottocategoria.lowercase() }
+            .distinctBy { it.key }
             .sortedWith(compareBy({ it.categoria.toIntOrNull() ?: Int.MAX_VALUE }, { it.sottocategoria.lowercase() }))
     }
 
@@ -368,7 +380,7 @@ class SpeseRepository(
      * Scarica tutte le lookup dal backend in parallelo e aggiorna il DB locale.
      * Le 5 chiamate API (tipi+tipiRaw unificate, categorie, sottocategorie, conti, UTC)
      * vengono lanciate in parallelo con [supervisorScope] + [async]: il fallimento di
-     * una chiamata non cancella le altre. Se tutte falliscono viene lanciata [java.io.IOException].
+     * una chiamata non cancella le altre. Se tutte falliscono viene lanciata [IOException].
      *
      * @param utenteId ID dell'utente per filtrare i conti.
      */
@@ -392,7 +404,7 @@ class SpeseRepository(
             .distinct().sorted()
 
         if (tipiList.isEmpty() && categorieList.isEmpty() && contiList.isEmpty() && utcRowsList.isEmpty()) {
-            throw java.io.IOException("Tutte le chiamate API di lookup sono fallite (timeout o rete assente)")
+            throw IOException("Tutte le chiamate API di lookup sono fallite (timeout o rete assente)")
         }
 
         // ── Scrittura su Room ─────────────────────────────────────────────
@@ -403,13 +415,7 @@ class SpeseRepository(
         lookupDao.clearConti()
         lookupDao.upsertConti(contiList.map { ContoEntity(value = it, utenteId = utenteId ?: "") })
         lookupDao.clearSottocategorie()
-        lookupDao.upsertSottocategorie(sottoList.map {
-            SottoCategoriaEntity(
-                key            = sottoKey(it.categoria, it.sottocategoria),
-                categoria      = it.categoria.trim(),
-                sottocategoria = it.sottocategoria.trim()
-            )
-        })
+        lookupDao.upsertSottocategorie(sottoList)
 
         val tipologiaTipoMap: Map<String, String> = tipiRawList.associate { m ->
             val label = buildLabel(
