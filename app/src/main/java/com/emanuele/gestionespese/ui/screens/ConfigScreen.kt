@@ -150,6 +150,23 @@ fun ConfigScreen(onBack: () -> Unit) {
         }
     }
 
+    fun attachRelationActive(record: Map<String, Any?>, table: ConfigTable): Map<String, Any?> {
+        val relationRows = when (table) {
+            ConfigTable.TIPOLOGIA,
+            ConfigTable.CATEGORIA,
+            ConfigTable.SOTTOCATEGORIA -> findUtcsRowsForRecord(record, table)
+            ConfigTable.CONTO -> findUcRowsForRecord(record)
+            else -> emptyList()
+        }
+        if (relationRows.isEmpty()) return record
+
+        val relationActive = relationRows.any { row ->
+            row["attivo"] == true || row["attivo"]?.toString()?.lowercase() == "true"
+        }
+        val attivoKey = if (table == ConfigTable.CATEGORIA) "attiva" else "attivo"
+        return record + mapOf(attivoKey to relationActive)
+    }
+
     // ── Filtro drill-down via UTCS ────────────────────────────────────
     // derivedStateOf garantisce ricalcolo reattivo quando allUtcs/drillLevel cambiano
     val utcsFiltrati by remember {
@@ -163,9 +180,11 @@ fun ConfigScreen(onBack: () -> Unit) {
     val currentList by remember {
         derivedStateOf {
             when {
-                activeTab == ConfigTab.CONTI -> allConti
+                activeTab == ConfigTab.CONTI ->
+                    allConti.map { attachRelationActive(it, ConfigTable.CONTO) }
 
-                drillLevel == DrillLevel.TIPOLOGIA -> allTipologie
+                drillLevel == DrillLevel.TIPOLOGIA ->
+                    allTipologie.map { attachRelationActive(it, ConfigTable.TIPOLOGIA) }
 
                 drillLevel == DrillLevel.CATEGORIA -> {
                     val tipoId = extractId(selectedTipo?.get("id"))
@@ -174,7 +193,9 @@ fun ConfigScreen(onBack: () -> Unit) {
                         .map    { extractId(it["id_categoria"]) }
                         .filter { it.isNotBlank() }
                         .toSet()
-                    allCategorie.filter { extractId(it["id"]) in catIds }
+                    allCategorie
+                        .filter { extractId(it["id"]) in catIds }
+                        .map { attachRelationActive(it, ConfigTable.CATEGORIA) }
                 }
 
                 else -> {
@@ -188,7 +209,9 @@ fun ConfigScreen(onBack: () -> Unit) {
                         .map    { extractId(it["id_sottocategoria"]) }
                         .filter { it.isNotBlank() }
                         .toSet()
-                    allSottocategorie.filter { extractId(it["id"]) in sottoIds }
+                    allSottocategorie
+                        .filter { extractId(it["id"]) in sottoIds }
+                        .map { attachRelationActive(it, ConfigTable.SOTTOCATEGORIA) }
                 }
             }
         }
@@ -758,22 +781,42 @@ fun ConfigScreen(onBack: () -> Unit) {
                             loadingRecordId = thisId
                             scope.launch {
                                 try {
-                                    val id = (record["id"] as? Double)?.toInt()
-                                        ?: record["id"].toString().toIntOrNull() ?: return@launch
-                                    // Invia SOLO il campo attivo — nessun altro campo
-                                    val attivoKey = if (currentTable == ConfigTable.CATEGORIA) "attiva" else "attivo"
-                                    api.updateRecord(
-                                        GenericUpdateRequest(
-                                            resource = currentTable.resource,
-                                            id       = id,
-                                            data     = mapOf(attivoKey to newVal)
-                                        )
-                                    )
-                                    if (!newVal) {
-                                        cascadeDeactivate(currentTable, id)
-                                    } else {
-                                        refreshCurrentLevel(showTopLoading = false)
+                                    when (currentTable) {
+                                        ConfigTable.TIPOLOGIA,
+                                        ConfigTable.CATEGORIA,
+                                        ConfigTable.SOTTOCATEGORIA -> {
+                                            val rowsToUpdate = findUtcsRowsForRecord(record, currentTable)
+                                            rowsToUpdate.forEach { utcsRow ->
+                                                val utcsId = (utcsRow["id"] as? Double)?.toInt()
+                                                    ?: utcsRow["id"].toString().toIntOrNull()
+                                                    ?: return@forEach
+                                                api.updateRecord(
+                                                    GenericUpdateRequest(
+                                                        resource = ConfigTable.UTCS.resource,
+                                                        id       = utcsId,
+                                                        data     = mapOf("attivo" to newVal).sanitizeForSheet()
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        ConfigTable.CONTO -> {
+                                            val rowsToUpdate = findUcRowsForRecord(record)
+                                            rowsToUpdate.forEach { ucRow ->
+                                                val ucId = (ucRow["id"] as? Double)?.toInt()
+                                                    ?: ucRow["id"].toString().toIntOrNull()
+                                                    ?: return@forEach
+                                                api.updateRecord(
+                                                    GenericUpdateRequest(
+                                                        resource = ConfigTable.UC.resource,
+                                                        id       = ucId,
+                                                        data     = mapOf("attivo" to newVal).sanitizeForSheet()
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        else -> Unit
                                     }
+                                    refreshCurrentLevel(showTopLoading = false)
                                 } catch (e: Exception) { errorMsg = e.message }
                                 finally { loadingRecordId = null }
                             }
