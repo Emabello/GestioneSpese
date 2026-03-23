@@ -36,6 +36,7 @@ import com.emanuele.gestionespese.data.repo.stripFormulaFields
 import com.emanuele.gestionespese.ui.theme.Brand
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 // ── Tab principali ────────────────────────────────────────────────────
@@ -242,10 +243,11 @@ fun ConfigScreen(onBack: () -> Unit) {
     }
 
     // ── Refresh mirato con filtri drill-down ──────────────────────────
-    fun refreshCurrentLevel() {
-        scope.launch {
-            isRefreshing = true; errorMsg = null
-            try {
+    suspend fun refreshCurrentLevel(showTopLoading: Boolean = true) {
+        if (showTopLoading) isRefreshing = true
+        errorMsg = null
+        try {
+            coroutineScope {
                 // Ricarica sempre UTCS (fonte gerarchia) + la tabella corrente
                 val utcsD = async { api.getUtcs().data ?: emptyList() }
                 when {
@@ -263,50 +265,53 @@ fun ConfigScreen(onBack: () -> Unit) {
                         allSottocategorie = api.getSottocategorie().data ?: emptyList()
                 }
                 allUtcs = utcsD.await()
-            } catch (e: Exception) { errorMsg = e.message }
-            finally { isRefreshing = false }
+            }
+        } catch (e: Exception) {
+            errorMsg = e.message
+        } finally {
+            if (showTopLoading) isRefreshing = false
         }
     }
 
     // ── Cascade deactivate ────────────────────────────────────────────
-    fun cascadeDeactivate(table: ConfigTable, recordId: Int) {
-        scope.launch {
-            try {
-                val idStr = recordId.toString()
-                val toDeactivateUtcs = when (table) {
-                    ConfigTable.TIPOLOGIA      -> allUtcs.filter { extractId(it["id_tipologia"])      == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
-                    ConfigTable.CATEGORIA      -> allUtcs.filter { extractId(it["id_categoria"])      == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
-                    ConfigTable.SOTTOCATEGORIA -> allUtcs.filter { extractId(it["id_sottocategoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
-                    else -> emptyList()
-                }
-                val toDeactivateSottocat = when (table) {
-                    ConfigTable.CATEGORIA -> allSottocategorie.filter { extractId(it["id_categoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
-                    else -> emptyList()
-                }
-                val toDeactivateUc = when (table) {
-                    ConfigTable.CONTO -> allUc.filter { extractId(it["id_conto"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
-                    else -> emptyList()
-                }
-                val totalCount = toDeactivateUtcs.size + toDeactivateSottocat.size + toDeactivateUc.size
-                if (totalCount == 0) return@launch
+    suspend fun cascadeDeactivate(table: ConfigTable, recordId: Int) {
+        try {
+            val idStr = recordId.toString()
+            val toDeactivateUtcs = when (table) {
+                ConfigTable.TIPOLOGIA      -> allUtcs.filter { extractId(it["id_tipologia"])      == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                ConfigTable.CATEGORIA      -> allUtcs.filter { extractId(it["id_categoria"])      == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                ConfigTable.SOTTOCATEGORIA -> allUtcs.filter { extractId(it["id_sottocategoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                else -> emptyList()
+            }
+            val toDeactivateSottocat = when (table) {
+                ConfigTable.CATEGORIA -> allSottocategorie.filter { extractId(it["id_categoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                else -> emptyList()
+            }
+            val toDeactivateUc = when (table) {
+                ConfigTable.CONTO -> allUc.filter { extractId(it["id_conto"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                else -> emptyList()
+            }
+            val totalCount = toDeactivateUtcs.size + toDeactivateSottocat.size + toDeactivateUc.size
+            if (totalCount == 0) return
 
-                val jobs = mutableListOf<kotlinx.coroutines.Deferred<*>>()
-                toDeactivateUtcs.forEach { r ->
-                    val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
-                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UTCS.resource, id = rid, data = mapOf("attivo" to false))) }
-                }
-                toDeactivateSottocat.forEach { r ->
-                    val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
-                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.SOTTOCATEGORIA.resource, id = rid, data = mapOf("attivo" to false))) }
-                }
-                toDeactivateUc.forEach { r ->
-                    val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
-                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UC.resource, id = rid, data = mapOf("attivo" to false))) }
-                }
-                jobs.awaitAll()
-                snackMsg = "$totalCount ${if (totalCount == 1) "voce correlata disattivata" else "voci correlate disattivate"}"
-                loadAllData(forceRefresh = true)
-            } catch (e: Exception) { errorMsg = e.message }
+            val jobs = mutableListOf<kotlinx.coroutines.Deferred<*>>()
+            toDeactivateUtcs.forEach { r ->
+                val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
+                jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UTCS.resource, id = rid, data = mapOf("attivo" to false))) }
+            }
+            toDeactivateSottocat.forEach { r ->
+                val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
+                jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.SOTTOCATEGORIA.resource, id = rid, data = mapOf("attivo" to false))) }
+            }
+            toDeactivateUc.forEach { r ->
+                val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
+                jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UC.resource, id = rid, data = mapOf("attivo" to false))) }
+            }
+            jobs.awaitAll()
+            snackMsg = "$totalCount ${if (totalCount == 1) "voce correlata disattivata" else "voci correlate disattivate"}"
+            refreshCurrentLevel(showTopLoading = false)
+        } catch (e: Exception) {
+            errorMsg = e.message
         }
     }
 
@@ -340,8 +345,10 @@ fun ConfigScreen(onBack: () -> Unit) {
             onDismiss         = { showAddDialog = false; showEditDialog = false },
             onSave            = { data ->
                 scope.launch {
+                    val editingRecordId = selectedRecord?.let(::recordId)
+                    val isEditing = showEditDialog && selectedRecord != null
                     try {
-                        if (showEditDialog && selectedRecord != null) {
+                        if (isEditing && selectedRecord != null) {
                             // ── MODIFICA: solo campi sicuri ───────────
                             val id = (selectedRecord!!["id"] as? Double)?.toInt()
                                 ?: selectedRecord!!["id"].toString().toIntOrNull() ?: return@launch
@@ -486,8 +493,17 @@ fun ConfigScreen(onBack: () -> Unit) {
                             snackMsg = "Aggiunto in ${dialogTable.label}"
                         }
                         showAddDialog = false; showEditDialog = false
-                        refreshCurrentLevel()
-                    } catch (e: Exception) { errorMsg = e.message }
+                        if (isEditing && !editingRecordId.isNullOrBlank()) {
+                            loadingRecordId = editingRecordId
+                        }
+                        refreshCurrentLevel(showTopLoading = false)
+                    } catch (e: Exception) {
+                        errorMsg = e.message
+                    } finally {
+                        if (loadingRecordId == editingRecordId) {
+                            loadingRecordId = null
+                        }
+                    }
                 }
             }
         )
@@ -510,7 +526,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                 api.deleteRecord(GenericDeleteRequest(resource = dialogTable.resource, id = id))
                                 snackMsg = "Record eliminato"
                                 showDeleteConfirm = false
-                                refreshCurrentLevel()
+                                refreshCurrentLevel(showTopLoading = false)
                             } catch (e: Exception) {
                                 errorMsg = e.message
                                 showDeleteConfirm = false
@@ -550,7 +566,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                 },
                 actions = {
                     IconButton(
-                        onClick = { refreshCurrentLevel() },
+                        onClick = { scope.launch { refreshCurrentLevel() } },
                         enabled = !isRefreshing && !isLoading
                     ) {
                         if (isRefreshing) {
@@ -670,8 +686,11 @@ fun ConfigScreen(onBack: () -> Unit) {
                                             data     = mapOf(attivoKey to newVal)
                                         )
                                     )
-                                    if (!newVal) cascadeDeactivate(currentTable, id)
-                                    else refreshCurrentLevel()
+                                    if (!newVal) {
+                                        cascadeDeactivate(currentTable, id)
+                                    } else {
+                                        refreshCurrentLevel(showTopLoading = false)
+                                    }
                                 } catch (e: Exception) { errorMsg = e.message }
                                 finally { loadingRecordId = null }
                             }
