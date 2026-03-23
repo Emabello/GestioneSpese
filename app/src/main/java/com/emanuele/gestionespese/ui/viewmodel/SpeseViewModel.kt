@@ -131,6 +131,25 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
     }
 
     /**
+     * Sincronizza le spese dal backend e aggiorna la lista.
+     * Usato per il pull-to-refresh esplicito dell'utente.
+     * A differenza di [refresh], esegue anche la sync remota con [SpeseRepository.syncSpese].
+     */
+    fun pullRefresh() {
+        viewModelScope.launch {
+            _state.update { it.copy(loading = true, error = null) }
+            runCatching {
+                repo.syncSpese(currentUtente)
+                repo.list(currentUtente)
+            }.onSuccess { list ->
+                _state.update { it.copy(loading = false, spese = list, didLoadSpese = true) }
+            }.onFailure { e ->
+                _state.update { it.copy(loading = false, error = e.message) }
+            }
+        }
+    }
+
+    /**
      * Ricarica le spese solo se non sono già state caricate o se si forza.
      *
      * @param force `true` per forzare il ricaricamento anche se già caricato.
@@ -260,17 +279,20 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
 
     /**
      * Elimina una spesa per ID (sia dal backend che da Room).
+     * Setta [SpeseUiState.deletingId] durante l'operazione per mostrare un
+     * indicatore di caricamento sulla card corrispondente.
      *
      * @param id ID del movimento da eliminare.
      */
     fun delete(id: Int) {
         viewModelScope.launch {
+            _state.update { it.copy(deletingId = id) }
             runCatching { repo.delete(id = id, utente = currentUtente) }
                 .onSuccess {
-                    _state.update { it.copy(spese = it.spese.filter { s -> s.id != id }) }
+                    _state.update { it.copy(spese = it.spese.filter { s -> s.id != id }, deletingId = null) }
                 }
                 .onFailure { e ->
-                    _state.update { it.copy(error = e.message) }
+                    _state.update { it.copy(error = e.message, deletingId = null) }
                 }
         }
     }
@@ -386,6 +408,7 @@ enum class FilterKey { MESE, TIPO, METODO, QUERY }
  * @property loading         `true` durante il caricamento delle spese.
  * @property loadingLookups  `true` durante il caricamento delle lookup.
  * @property saving          `true` durante il salvataggio di una spesa.
+ * @property deletingId      ID della spesa in fase di eliminazione, o `null` se nessuna.
  * @property saveOkTick      Timestamp del salvataggio riuscito (usato per il toast).
  * @property draftPrefillTick Timestamp dell'ultimo prefill da bozza bancaria.
  * @property error           Messaggio di errore corrente, o `null`.
@@ -408,6 +431,7 @@ data class SpeseUiState(
     val loading: Boolean = false,
     val loadingLookups: Boolean = false,
     val saving: Boolean = false,
+    val deletingId: Int? = null,
     val saveOkTick: Long = 0L,
     val draftPrefillTick: Long = 0L,
     val error: String? = null,

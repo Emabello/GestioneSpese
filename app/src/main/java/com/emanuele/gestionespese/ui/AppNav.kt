@@ -145,7 +145,7 @@ fun AppNav(vm: SpeseViewModel) {
         }
 
         composable(Routes.CONFIG) {
-            ConfigScreen(vm = vm, onBack = { nav.popBackStack() })
+            ConfigScreen(onBack = { nav.popBackStack() })
         }
     }
 }
@@ -212,13 +212,6 @@ fun MainTabScreen(
                     vm          = vmDraft,
                     onBack      = { selectedTab = MainTab.HOME.ordinal },
                     onOpenDraft = { draft ->
-                        android.util.Log.d("DRAFT_DEBUG", "=== APRO DRAFT ===")
-                        android.util.Log.d("DRAFT_DEBUG", "amountCents=${draft.amountCents}")
-                        android.util.Log.d("DRAFT_DEBUG", "importo=${draft.amountCents / 100.0}")
-                        android.util.Log.d("DRAFT_DEBUG", "descrizione=${draft.descrizione}")
-                        android.util.Log.d("DRAFT_DEBUG", "dateMillis=${draft.dateMillis}")
-                        android.util.Log.d("DRAFT_DEBUG", "metodo=${draft.metodoPagamento}")
-
                         onNavigateToForm(null, draft.id)
 
                         vm.prefillFromDraft(

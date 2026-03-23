@@ -34,7 +34,6 @@ import com.emanuele.gestionespese.MyApp
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.data.repo.stripFormulaFields
 import com.emanuele.gestionespese.ui.theme.Brand
-import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
@@ -66,9 +65,7 @@ private fun Map<String, Any?>.safePayload(): Map<String, Any?> =
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
-    val vmState by vm.state.collectAsState()
-
+fun ConfigScreen(onBack: () -> Unit) {
     val context       = LocalContext.current
     val app           = context.applicationContext as MyApp
     val api           = app.api
@@ -187,61 +184,58 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
         snackMsg?.let { snackbarHostState.showSnackbar(it); snackMsg = null }
     }
 
-    // ── Popola cache da vmState (zero rete) ───────────────────────────
-    LaunchedEffect(vmState.didLoadLookups) {
-        if (vmState.didLoadLookups) {
-            if (allTipologie.isEmpty()) allTipologie = vmState.tipi.map { label ->
-                val p = label.split(" - ", limit = 2)
-                mapOf("id" to p.getOrNull(0), "descrizione" to p.getOrNull(1),
-                    "attivo" to true, "tipo_movimento" to "uscita")
-            }
-            if (allCategorie.isEmpty()) allCategorie = vmState.categorie.map { label ->
-                val p = label.split(" - ", limit = 2)
-                mapOf("id" to p.getOrNull(0), "descrizione" to p.getOrNull(1), "attiva" to true)
-            }
-            if (allConti.isEmpty()) allConti = vmState.conti.map { label ->
-                val p = label.split(" - ", limit = 2)
-                mapOf("id" to p.getOrNull(0), "id_conto" to label,
-                    "descrizione" to label, "attivo" to true)
-            }
-            // allSottocategorie NON viene popolato da vmState perché i record
-            // da vmState hanno id=null e rompono il filtro drill-down.
-        }
-    }
-
-    // ── Carica da API ─────────────────────────────────────────────────
-    // UTCS viene sempre caricato (necessario per il drill-down).
-    // Il resto solo se la cache è vuota.
+    // ── Carica dati ───────────────────────────────────────────────────
+    // Tipi, categorie, sottocategorie: da Room (già sincronizzate da syncAllBatch,
+    // zero chiamate API). UTCs dall'API perché il loro id numerico non è in Room
+    // ed è necessario per le operazioni CRUD (cascade deactivate, ecc.).
+    // Conti e UC vengono caricati lazy nel LaunchedEffect(activeTab) → CONTI.
     fun loadAllData(forceRefresh: Boolean = false) {
         scope.launch {
             isLoading = true; errorMsg = null
             try {
-                // Forza sempre il caricamento completo da API:
-                // vmState popola allTipologie/allCategorie ma non allUtcs/allSottocategorie
-                // (le sottocategorie da vmState hanno id=null e rompono il drill-down).
-                val needFull = forceRefresh || allUtcs.isEmpty()
+                val db = (context.applicationContext as MyApp).db
 
-                if (needFull) {
-                    // Carica tutte le tabelle in parallelo
-                    val catD   = async { api.getCategorie().data
-                        ?.map { mapOf("id" to it.id, "descrizione" to it.descrizione, "attiva" to it.attiva) }
-                        ?: emptyList<Map<String, Any?>>() }
-                    val contiD = async { api.getConti().data ?: emptyList() }
-                    val tipD   = async { api.getTipi().data ?: emptyList() }
-                    val sottD  = async { api.getSottocategorie().data ?: emptyList() }
-                    val ucD    = async { api.getUc(utente = currentUtente).data ?: emptyList() }
-                    val utcsD  = async { api.getUtcs().data ?: emptyList() }
-
-                    allCategorie      = catD.await()
-                    allConti          = contiD.await()
-                    allTipologie      = tipD.await()
-                    allSottocategorie = sottD.await()
-                    allUc             = ucD.await()
-                    allUtcs           = utcsD.await()
-                } else {
-                    // Cache tabelle già disponibile — ricarica solo UTCS
-                    allUtcs = api.getUtcs().data ?: emptyList()
+                // Tipologie da Room
+                if (forceRefresh || allTipologie.isEmpty()) {
+                    allTipologie = db.lookupDao().getTipiRaw().map { e ->
+                        val p = e.value.split(" - ", limit = 2)
+                        mapOf<String, Any?>(
+                            "id"             to p.getOrNull(0),
+                            "descrizione"    to p.getOrNull(1),
+                            "attivo"         to e.attivo,
+                            "tipo_movimento" to e.tipoMovimento
+                        )
+                    }
                 }
+
+                // Categorie da Room
+                if (forceRefresh || allCategorie.isEmpty()) {
+                    allCategorie = db.lookupDao().getCategorieRaw().map { e ->
+                        val p = e.value.split(" - ", limit = 2)
+                        mapOf<String, Any?>(
+                            "id"          to p.getOrNull(0),
+                            "descrizione" to p.getOrNull(1),
+                            "attiva"      to e.attivo
+                        )
+                    }
+                }
+
+                // Sottocategorie da Room (hanno id numerico salvato)
+                if (forceRefresh || allSottocategorie.isEmpty()) {
+                    allSottocategorie = db.lookupDao().getSottocategorieRaw().map { e ->
+                        mapOf<String, Any?>(
+                            "id"           to e.id,
+                            "id_categoria" to e.categoria,
+                            "descrizione"  to e.sottocategoria,
+                            "attivo"       to e.attivo
+                        )
+                    }
+                }
+
+                // UTCs dall'API: il loro id numerico non è persistito in Room
+                // ed è necessario per cascade deactivate e altri CRUD
+                allUtcs = api.getUtcs().data ?: emptyList()
+
             } catch (e: Exception) { errorMsg = e.message }
             finally { isLoading = false }
         }
@@ -316,8 +310,20 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
         }
     }
 
-    // Carica all'avvio (UTCS sempre, resto se cache vuota)
+    // Carica all'avvio: tipi/categorie/sotto da Room, UTCs dall'API
     LaunchedEffect(Unit) { loadAllData() }
+
+    // Conti e UC: caricamento lazy solo quando il tab CONTI è aperto per la prima volta
+    LaunchedEffect(activeTab) {
+        if (activeTab == ConfigTab.CONTI && allConti.isEmpty()) {
+            isLoading = true
+            try {
+                allConti = api.getConti().data ?: emptyList()
+                allUc    = api.getUc(utente = currentUtente).data ?: emptyList()
+            } catch (e: Exception) { errorMsg = e.message }
+            finally { isLoading = false }
+        }
+    }
 
     // ── Dialog Aggiungi / Modifica ────────────────────────────────────
     if (showAddDialog || showEditDialog) {

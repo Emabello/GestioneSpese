@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -343,19 +344,26 @@ fun HomeScreen(
                     }
                 }
             } else {
-                // ← FIX: padding bottom = altezza bottom bar (80) + FAB (56) + gap (16) = 152
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(bottom = 152.dp)
+                PullToRefreshBox(
+                    isRefreshing = state.loading,
+                    onRefresh    = { vm.pullRefresh() },
+                    modifier     = Modifier.fillMaxSize()
                 ) {
-                    items(items = filtered, key = { it.id }) { spesa ->
-                        SpesaCard(
-                            spesa = spesa,
-                            onClick = { onEdit(spesa.id) },
-                            onDelete = { vm.delete(spesa.id) }
-                        )
+                    // ← FIX: padding bottom = altezza bottom bar (80) + FAB (56) + gap (16) = 152
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(bottom = 152.dp)
+                    ) {
+                        items(items = filtered, key = { it.id }) { spesa ->
+                            SpesaCard(
+                                spesa      = spesa,
+                                isDeleting = state.deletingId == spesa.id,
+                                onClick    = { if (state.deletingId == null) onEdit(spesa.id) },
+                                onDelete   = { vm.delete(spesa.id) }
+                            )
+                        }
                     }
                 }
             }
@@ -471,7 +479,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun SpesaCard(spesa: SpesaView, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun SpesaCard(spesa: SpesaView, isDeleting: Boolean, onClick: () -> Unit, onDelete: () -> Unit) {
     val tipoSafe   = spesa.tipo.orEmpty().ifBlank { "n/d" }
     val metodoSafe = spesa.conto.orEmpty().ifBlank { "n/d" }
     val dataSafe   = spesa.data.orEmpty().ifBlank { "n/d" }
@@ -487,6 +495,7 @@ private fun SpesaCard(spesa: SpesaView, onClick: () -> Unit, onDelete: () -> Uni
 
     ElevatedCard(
         onClick = onClick,
+        enabled = !isDeleting,
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.elevatedCardColors(containerColor = container),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp)
@@ -545,17 +554,30 @@ private fun SpesaCard(spesa: SpesaView, onClick: () -> Unit, onDelete: () -> Uni
                     modifier = Modifier.height(28.dp)
                 )
                 Spacer(Modifier.weight(1f))
-                // Tasto elimina piccolo inline
-                TextButton(
-                    onClick = onDelete,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.height(28.dp)
-                ) {
-                    Text(
-                        "Elimina",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
+                // Tasto elimina con spinner durante l'eliminazione
+                if (isDeleting) {
+                    Box(
+                        modifier = Modifier.height(28.dp).padding(horizontal = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier    = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color       = MaterialTheme.colorScheme.error
+                        )
+                    }
+                } else {
+                    TextButton(
+                        onClick = onDelete,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Text(
+                            "Elimina",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
 
