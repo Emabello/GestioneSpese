@@ -85,7 +85,7 @@ fun ConfigScreen(onBack: () -> Unit) {
     // ── Stato UI ──────────────────────────────────────────────────────
     var isLoading       by remember { mutableStateOf(false) }
     var isRefreshing    by remember { mutableStateOf(false) }
-    // Map id→true per mostrare loading su una specifica card
+    // id record con spinner locale
     var loadingRecordId by remember { mutableStateOf<String?>(null) }
     var errorMsg        by remember { mutableStateOf<String?>(null) }
 
@@ -183,8 +183,15 @@ fun ConfigScreen(onBack: () -> Unit) {
                 activeTab == ConfigTab.CONTI ->
                     allConti.map { attachRelationActive(it, ConfigTable.CONTO) }
 
-                drillLevel == DrillLevel.TIPOLOGIA ->
-                    allTipologie.map { attachRelationActive(it, ConfigTable.TIPOLOGIA) }
+                drillLevel == DrillLevel.TIPOLOGIA -> {
+                    val tipoIds = utcsFiltrati
+                        .map { extractId(it["id_tipologia"]) }
+                        .filter { it.isNotBlank() }
+                        .toSet()
+                    allTipologie
+                        .filter { extractId(it["id"]) in tipoIds }
+                        .map { attachRelationActive(it, ConfigTable.TIPOLOGIA) }
+                }
 
                 drillLevel == DrillLevel.CATEGORIA -> {
                     val tipoId = extractId(selectedTipo?.get("id"))
@@ -300,9 +307,10 @@ fun ConfigScreen(onBack: () -> Unit) {
                     }
                 }
 
-                // UTCs dall'API: il loro id numerico non è persistito in Room
-                // ed è necessario per cascade deactivate e altri CRUD
+                // Dati relazione/config dall'API: servono per stato attivo e CRUD puntuali
                 allUtcs = api.getUtcs().data ?: emptyList()
+                allConti = api.getConti().data ?: emptyList()
+                allUc = api.getUc(utente = currentUtente).data ?: emptyList()
 
             } catch (e: Exception) { errorMsg = e.message }
             finally { isLoading = false }
@@ -387,15 +395,38 @@ fun ConfigScreen(onBack: () -> Unit) {
     // Carica all'avvio: tipi/categorie/sotto da Room, UTCs dall'API
     LaunchedEffect(Unit) { loadAllData() }
 
-    // Conti e UC: caricamento lazy solo quando il tab CONTI è aperto per la prima volta
-    LaunchedEffect(activeTab) {
-        if (activeTab == ConfigTab.CONTI && allConti.isEmpty()) {
-            isLoading = true
-            try {
-                allConti = api.getConti().data ?: emptyList()
-                allUc    = api.getUc(utente = currentUtente).data ?: emptyList()
-            } catch (e: Exception) { errorMsg = e.message }
-            finally { isLoading = false }
+    fun addOptimisticRecord(table: ConfigTable, newId: String, data: Map<String, Any?>) {
+        val optimisticRecord = when (table) {
+            ConfigTable.TIPOLOGIA -> mapOf(
+                "id" to newId,
+                "descrizione" to (data["descrizione"]?.toString() ?: ""),
+                "tipo_movimento" to (data["tipo_movimento"]?.toString() ?: "uscita"),
+                "attivo" to true
+            )
+            ConfigTable.CATEGORIA -> mapOf(
+                "id" to newId,
+                "descrizione" to (data["descrizione"]?.toString() ?: ""),
+                "attiva" to true
+            )
+            ConfigTable.SOTTOCATEGORIA -> mapOf(
+                "id" to newId,
+                "id_categoria" to (data["id_categoria"]?.toString() ?: selectedCat?.get("id")?.toString().orEmpty()),
+                "descrizione" to (data["descrizione"]?.toString() ?: ""),
+                "attivo" to true
+            )
+            ConfigTable.CONTO -> mapOf(
+                "id" to newId,
+                "descrizione" to (data["descrizione"]?.toString() ?: ""),
+                "attivo" to true
+            )
+            else -> emptyMap()
+        }
+        when (table) {
+            ConfigTable.TIPOLOGIA -> allTipologie = (allTipologie + optimisticRecord).distinctBy { recordId(it) }
+            ConfigTable.CATEGORIA -> allCategorie = (allCategorie + optimisticRecord).distinctBy { recordId(it) }
+            ConfigTable.SOTTOCATEGORIA -> allSottocategorie = (allSottocategorie + optimisticRecord).distinctBy { recordId(it) }
+            ConfigTable.CONTO -> allConti = (allConti + optimisticRecord).distinctBy { recordId(it) }
+            else -> Unit
         }
     }
 
@@ -416,6 +447,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                 scope.launch {
                     val editingRecordId = selectedRecord?.let(::recordId)
                     val isEditing = showEditDialog && selectedRecord != null
+                    var targetLoadingRecordId: String? = editingRecordId
                     try {
                         if (isEditing && selectedRecord != null) {
                             // ── MODIFICA: solo campi sicuri ───────────
@@ -448,7 +480,32 @@ fun ConfigScreen(onBack: () -> Unit) {
                             // non nel formato completo "1 - Debiti".
                             // extractId() garantisce che prendiamo solo la parte numerica.
 
+                            if (!newId.isNullOrBlank()) {
+                                addOptimisticRecord(dialogTable, newId, data)
+                                loadingRecordId = newId
+                                targetLoadingRecordId = newId
+                            }
+
                             when (dialogTable) {
+
+                                ConfigTable.TIPOLOGIA -> {
+                                    if (newId != null) {
+                                        val tipoLabel = "${newId} - ${data["descrizione"]?.toString() ?: ""}"
+                                        val newUtcsRow = api.insertRecord(
+                                            GenericInsertRequest(
+                                                resource = ConfigTable.UTCS.resource,
+                                                data     = mapOf(
+                                                    "id_utente"         to currentUtente,
+                                                    "id_tipologia"      to tipoLabel,
+                                                    "id_categoria"      to "",
+                                                    "id_sottocategoria" to "",
+                                                    "attivo"            to true
+                                                ).sanitizeForSheet()
+                                            )
+                                        ).data ?: emptyMap()
+                                        allUtcs = allUtcs + newUtcsRow
+                                    }
+                                }
 
                                 // Nuova Categoria → UTCS placeholder (sottocategoria vuota)
                                 // così la categoria è subito visibile nel drill-down.
@@ -467,7 +524,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                         "$newId - $desc"
                                     } else ""
                                     if (tipoLabel.isNotBlank() && catLabel.isNotBlank()) {
-                                        api.insertRecord(
+                                        val newUtcsRow = api.insertRecord(
                                             GenericInsertRequest(
                                                 resource = ConfigTable.UTCS.resource,
                                                 data     = mapOf(
@@ -478,7 +535,8 @@ fun ConfigScreen(onBack: () -> Unit) {
                                                     "attivo"            to true
                                                 ).sanitizeForSheet()
                                             )
-                                        )
+                                        ).data ?: emptyMap()
+                                        allUtcs = allUtcs + newUtcsRow
                                     }
                                 }
 
@@ -524,7 +582,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                             )
                                         } else {
                                             // Nessun placeholder → insert diretto
-                                            api.insertRecord(
+                                            val newUtcsRow = api.insertRecord(
                                                 GenericInsertRequest(
                                                     resource = ConfigTable.UTCS.resource,
                                                     data     = mapOf(
@@ -535,7 +593,8 @@ fun ConfigScreen(onBack: () -> Unit) {
                                                         "attivo"            to true
                                                     ).sanitizeForSheet()
                                                 )
-                                            )
+                                            ).data ?: emptyMap()
+                                            allUtcs = allUtcs + newUtcsRow
                                         }
                                     }
                                 }
@@ -543,7 +602,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                 // Nuovo Conto → UC automatico
                                 ConfigTable.CONTO -> {
                                     if (newId != null) {
-                                        api.insertRecord(
+                                        val newUcRow = api.insertRecord(
                                             GenericInsertRequest(
                                                 resource = ConfigTable.UC.resource,
                                                 data     = mapOf(
@@ -552,7 +611,8 @@ fun ConfigScreen(onBack: () -> Unit) {
                                                     "attivo"    to true
                                                 ).sanitizeForSheet()
                                             )
-                                        )
+                                        ).data ?: emptyMap()
+                                        allUc = allUc + newUcRow
                                     }
                                 }
 
@@ -569,7 +629,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                     } catch (e: Exception) {
                         errorMsg = e.message
                     } finally {
-                        if (loadingRecordId == editingRecordId) {
+                        if (loadingRecordId == targetLoadingRecordId) {
                             loadingRecordId = null
                         }
                     }
@@ -603,11 +663,11 @@ fun ConfigScreen(onBack: () -> Unit) {
                                                 ?: return@forEach
                                             api.deleteRecord(GenericDeleteRequest(resource = ConfigTable.UTCS.resource, id = utcsId))
                                         }
-                                        snackMsg = if (rowsToDelete.isEmpty()) {
-                                            "Nessuna riga UTCS trovata da eliminare"
-                                        } else {
-                                            "${rowsToDelete.size} ${if (rowsToDelete.size == 1) "riga UTCS eliminata" else "righe UTCS eliminate"}"
-                                        }
+                                        val baseId = (record["id"] as? Double)?.toInt()
+                                            ?: record["id"].toString().toIntOrNull()
+                                            ?: return@launch
+                                        api.deleteRecord(GenericDeleteRequest(resource = dialogTable.resource, id = baseId))
+                                        snackMsg = "Eliminate relazione e voce ${dialogTable.label.lowercase()}"
                                     }
                                     ConfigTable.CONTO -> {
                                         val rowsToDelete = findUcRowsForRecord(record)
@@ -617,11 +677,11 @@ fun ConfigScreen(onBack: () -> Unit) {
                                                 ?: return@forEach
                                             api.deleteRecord(GenericDeleteRequest(resource = ConfigTable.UC.resource, id = ucId))
                                         }
-                                        snackMsg = if (rowsToDelete.isEmpty()) {
-                                            "Nessuna riga UC trovata da eliminare"
-                                        } else {
-                                            "${rowsToDelete.size} ${if (rowsToDelete.size == 1) "riga conto utente eliminata" else "righe conto utente eliminate"}"
-                                        }
+                                        val baseId = (record["id"] as? Double)?.toInt()
+                                            ?: record["id"].toString().toIntOrNull()
+                                            ?: return@launch
+                                        api.deleteRecord(GenericDeleteRequest(resource = ConfigTable.CONTO.resource, id = baseId))
+                                        snackMsg = "Eliminate relazione e voce conto"
                                     }
                                     else -> {
                                         val id = (record["id"] as? Double)?.toInt()
