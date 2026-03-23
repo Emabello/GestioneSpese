@@ -294,20 +294,22 @@ fun ConfigScreen(onBack: () -> Unit) {
             val totalCount = toDeactivateUtcs.size + toDeactivateSottocat.size + toDeactivateUc.size
             if (totalCount == 0) return
 
-            val jobs = mutableListOf<kotlinx.coroutines.Deferred<*>>()
-            toDeactivateUtcs.forEach { r ->
-                val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
-                jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UTCS.resource, id = rid, data = mapOf("attivo" to false))) }
+            coroutineScope {
+                val jobs = mutableListOf<kotlinx.coroutines.Deferred<*>>()
+                toDeactivateUtcs.forEach { r ->
+                    val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
+                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UTCS.resource, id = rid, data = mapOf("attivo" to false))) }
+                }
+                toDeactivateSottocat.forEach { r ->
+                    val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
+                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.SOTTOCATEGORIA.resource, id = rid, data = mapOf("attivo" to false))) }
+                }
+                toDeactivateUc.forEach { r ->
+                    val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
+                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UC.resource, id = rid, data = mapOf("attivo" to false))) }
+                }
+                jobs.awaitAll()
             }
-            toDeactivateSottocat.forEach { r ->
-                val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
-                jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.SOTTOCATEGORIA.resource, id = rid, data = mapOf("attivo" to false))) }
-            }
-            toDeactivateUc.forEach { r ->
-                val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
-                jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UC.resource, id = rid, data = mapOf("attivo" to false))) }
-            }
-            jobs.awaitAll()
             snackMsg = "$totalCount ${if (totalCount == 1) "voce correlata disattivata" else "voci correlate disattivate"}"
             refreshCurrentLevel(showTopLoading = false)
         } catch (e: Exception) {
