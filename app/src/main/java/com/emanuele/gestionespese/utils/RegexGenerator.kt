@@ -96,10 +96,10 @@ object RegexGenerator {
      * Rileva il pattern regex corretto per il valore numerico selezionato.
      *
      * Gestisce un eventuale simbolo di valuta (€, $, £…) davanti al numero
-     * aggiungendo un prefisso opzionale `(?:[€$£¥₹]\s*)?` nel pattern generato.
+     * aggiungendo un prefisso opzionale `(?:[*€$£¥₹]\s*)?` nel pattern generato.
      *
-     * - "€24,90"    → `(?:[€$£¥₹]\s*)?(\d+[,.]\d{2})`
-     * - "€1.234,56" → `(?:[€$£¥₹]\s*)?(\d{1,3}(?:\.\d{3})*,\d{2})`
+     * - "€24,90"    → `(?:[*€$£¥₹]\s*)?(\d+[,.]\d{2})`
+     * - "€1.234,56" → `(?:[*€$£¥₹]\s*)?(\d{1,3}(?:\.\d{3})*,\d{2})`
      * - "24,90"     → `(\d+[,.]\d{2})`
      * - "2.50"      → `(\d+[,.]\d{2})`
      */
