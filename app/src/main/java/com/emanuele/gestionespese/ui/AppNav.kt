@@ -35,9 +35,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.emanuele.gestionespese.MyApp
+import com.emanuele.gestionespese.data.repo.BankProfileRepository
 import com.emanuele.gestionespese.data.repo.DashboardRepository
 import com.emanuele.gestionespese.data.repo.SpesaDraftRepository
 import com.emanuele.gestionespese.ui.drafts.DraftsViewModel
+import com.emanuele.gestionespese.ui.screens.BankProfileEditScreen
+import com.emanuele.gestionespese.ui.screens.BankProfileListScreen
 import com.emanuele.gestionespese.ui.screens.ConfigScreen
 import com.emanuele.gestionespese.ui.screens.DashboardEditScreen
 import com.emanuele.gestionespese.ui.screens.DraftsScreen
@@ -47,14 +50,17 @@ import com.emanuele.gestionespese.ui.screens.SpesaFormScreen
 import com.emanuele.gestionespese.ui.screens.SummaryScreen
 import com.emanuele.gestionespese.ui.screens.SyncLoadingScreen
 import com.emanuele.gestionespese.ui.theme.Brand
+import com.emanuele.gestionespese.ui.viewmodel.BankProfileViewModel
 import com.emanuele.gestionespese.ui.viewmodel.DashboardViewModel
 import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
 
 object Routes {
-    const val MAIN           = "main"
-    const val FORM           = "form"
-    const val DASHBOARD_EDIT = "dashboard_edit"
-    const val CONFIG         = "config"
+    const val MAIN               = "main"
+    const val FORM               = "form"
+    const val DASHBOARD_EDIT     = "dashboard_edit"
+    const val CONFIG             = "config"
+    const val BANK_PROFILES      = "bank_profiles"
+    const val BANK_PROFILE_EDIT  = "bank_profile_edit"  // ?profileId={profileId} — -1L = nuovo
 }
 
 enum class MainTab(
@@ -95,24 +101,31 @@ fun AppNav(vm: SpeseViewModel) {
         }
     )
 
+    val bankProfileVm: BankProfileViewModel = viewModel(
+        factory = BankProfileViewModel.factory(
+            BankProfileRepository((context.applicationContext as MyApp).db.bankProfileDao())
+        )
+    )
+
     NavHost(navController = nav, startDestination = Routes.MAIN) {
 
         composable(Routes.MAIN) {
             MainTabScreen(
-                vm                 = vm,
-                dashVm             = dashVm,
-                onNavigateToForm   = { editId, draftId ->
+                vm                       = vm,
+                dashVm                   = dashVm,
+                onNavigateToForm         = { editId, draftId ->
                     if (editId == null) vm.clearDraftPrefill()
                     val route = when {
                         editId != null && draftId != null -> "${Routes.FORM}?id=$editId&draftId=$draftId"
                         editId != null                    -> "${Routes.FORM}?id=$editId"
-                        draftId != null                   -> "${Routes.FORM}?id=-1&draftId=$draftId"  // ← id=-1 esplicito
+                        draftId != null                   -> "${Routes.FORM}?id=-1&draftId=$draftId"
                         else                              -> Routes.FORM
                     }
                     nav.navigate(route)
                 },
-                onEditDashboard    = { nav.navigate(Routes.DASHBOARD_EDIT) },
-                onNavigateToConfig = { nav.navigate(Routes.CONFIG) }
+                onEditDashboard          = { nav.navigate(Routes.DASHBOARD_EDIT) },
+                onNavigateToConfig       = { nav.navigate(Routes.CONFIG) },
+                onNavigateToBankProfiles = { nav.navigate(Routes.BANK_PROFILES) }
             )
         }
 
@@ -147,6 +160,35 @@ fun AppNav(vm: SpeseViewModel) {
         composable(Routes.CONFIG) {
             ConfigScreen(vm = vm, onBack = { nav.popBackStack() })
         }
+
+        // ── Banche configurate ────────────────────────────────────────────────
+        composable(Routes.BANK_PROFILES) {
+            BankProfileListScreen(
+                vm            = bankProfileVm,
+                onEditProfile = { profileId ->
+                    nav.navigate("${Routes.BANK_PROFILE_EDIT}?profileId=$profileId")
+                },
+                onNewProfile  = {
+                    nav.navigate("${Routes.BANK_PROFILE_EDIT}?profileId=-1")
+                },
+                onBack        = { nav.popBackStack() }
+            )
+        }
+
+        composable(
+            route     = "${Routes.BANK_PROFILE_EDIT}?profileId={profileId}",
+            arguments = listOf(navArgument("profileId") {
+                type         = NavType.LongType
+                defaultValue = -1L
+            })
+        ) { backStackEntry ->
+            val profileId = backStackEntry.arguments?.getLong("profileId") ?: -1L
+            BankProfileEditScreen(
+                vm        = bankProfileVm,
+                profileId = profileId,
+                onBack    = { nav.popBackStack() }
+            )
+        }
     }
 }
 
@@ -154,9 +196,10 @@ fun AppNav(vm: SpeseViewModel) {
 fun MainTabScreen(
     vm: SpeseViewModel,
     dashVm: DashboardViewModel,
-    onNavigateToForm: (editId: Int?, draftId: Long?) -> Unit,  // ← aggiornata
+    onNavigateToForm: (editId: Int?, draftId: Long?) -> Unit,
     onEditDashboard: () -> Unit,
-    onNavigateToConfig: () -> Unit
+    onNavigateToConfig: () -> Unit,
+    onNavigateToBankProfiles: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -231,8 +274,9 @@ fun MainTabScreen(
                     }
                 )
                 MainTab.SETTINGS.ordinal -> SettingsScreen(
-                    vm                 = vm,
-                    onNavigateToConfig = onNavigateToConfig
+                    vm                       = vm,
+                    onNavigateToConfig       = onNavigateToConfig,
+                    onNavigateToBankProfiles = onNavigateToBankProfiles
                 )
             }
         }

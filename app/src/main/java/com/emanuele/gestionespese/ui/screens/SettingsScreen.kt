@@ -55,13 +55,18 @@ import java.util.Locale
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.emanuele.gestionespese.BuildConfig
 import com.emanuele.gestionespese.LoginActivity
 import com.emanuele.gestionespese.MyApp
+import com.emanuele.gestionespese.data.local.entities.BankProfileEntity
 import com.emanuele.gestionespese.data.model.LinkGoogleRequest
 import com.emanuele.gestionespese.data.model.UnlinkGoogleRequest
+import com.emanuele.gestionespese.data.repo.BankProfileRepository
 import com.emanuele.gestionespese.ui.theme.Brand
+import com.emanuele.gestionespese.ui.viewmodel.BankProfileViewModel
 import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
+import com.emanuele.gestionespese.ui.viewmodel.TestResult
 import com.emanuele.gestionespese.utils.DevLogger
 import com.emanuele.gestionespese.utils.extractSubFromToken
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
@@ -125,7 +130,11 @@ private fun SectionHeader(title: String) {
 // ── SettingsScreen ───────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: SpeseViewModel, onNavigateToConfig: () -> Unit) {
+fun SettingsScreen(
+    vm: SpeseViewModel,
+    onNavigateToConfig: () -> Unit,
+    onNavigateToBankProfiles: () -> Unit
+) {
     val context  = LocalContext.current
     val app      = context.applicationContext as MyApp
     val userId   = app.currentUserId
@@ -673,6 +682,25 @@ fun SettingsScreen(vm: SpeseViewModel, onNavigateToConfig: () -> Unit) {
                             }
                         }
                     }
+
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
+
+                    // Voce: Banche configurate
+                    SettingRow(
+                        icon           = Icons.Default.AccountBalance,
+                        iconTint       = Brand,
+                        iconBackground = Brand.copy(alpha = 0.12f),
+                        title          = "Banche configurate",
+                        subtitle       = "Gestisci le app e le regex di parsing",
+                        modifier       = Modifier.clickable { onNavigateToBankProfiles() },
+                        trailing = {
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                        }
+                    )
                 }
             }
 
@@ -811,6 +839,11 @@ fun SettingsScreen(vm: SpeseViewModel, onNavigateToConfig: () -> Unit) {
                                 Text("Listener notifiche")
                             }
 
+                            HorizontalDivider(thickness = 0.5.dp)
+
+                            // ── Parser Tester ────────────────────────────────
+                            ParserTesterSection(vm = vm, app = app)
+
                             // Disattiva
                             TextButton(
                                 onClick  = { devModeEnabled = false; app.saveDevModeEnabled(false); devTapCount = 0 },
@@ -828,6 +861,159 @@ fun SettingsScreen(vm: SpeseViewModel, onNavigateToConfig: () -> Unit) {
             }
 
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+// ── Parser Tester (sezione developer) ────────────────────────────────────────
+
+@Composable
+private fun ParserTesterSection(vm: SpeseViewModel, app: MyApp) {
+    val context = LocalContext.current
+    val bankVm: BankProfileViewModel = viewModel(
+        factory = BankProfileViewModel.factory(
+            BankProfileRepository(app.db.bankProfileDao())
+        )
+    )
+
+    val profiles   by bankVm.profiles.collectAsState()
+    val testResult by bankVm.testResult.collectAsState()
+
+    var selectedProfile by remember { mutableStateOf<BankProfileEntity?>(null) }
+    var notifText       by remember { mutableStateOf("") }
+    var dropdownExpanded by remember { mutableStateOf(false) }
+
+    // Aggiorna profilo selezionato se la lista cambia
+    LaunchedEffect(profiles) {
+        if (selectedProfile == null && profiles.isNotEmpty()) {
+            selectedProfile = profiles.first()
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "TEST PARSER NOTIFICHE",
+            style      = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color      = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+        )
+
+        if (profiles.isEmpty()) {
+            Text(
+                "Configura almeno una banca per testare il parser",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.6f)
+            )
+        } else {
+            // Dropdown selezione profilo
+            Box {
+                OutlinedButton(
+                    onClick  = { dropdownExpanded = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(selectedProfile?.displayName ?: "Seleziona banca")
+                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
+                }
+                DropdownMenu(
+                    expanded        = dropdownExpanded,
+                    onDismissRequest = { dropdownExpanded = false }
+                ) {
+                    profiles.forEach { profile ->
+                        DropdownMenuItem(
+                            text    = { Text(profile.displayName) },
+                            onClick = { selectedProfile = profile; dropdownExpanded = false }
+                        )
+                    }
+                }
+            }
+
+            // TextField testo notifica
+            OutlinedTextField(
+                value         = notifText,
+                onValueChange = { notifText = it },
+                label         = { Text("Testo notifica") },
+                placeholder   = { Text("Incolla qui il testo della notifica...") },
+                minLines      = 3,
+                maxLines      = 6,
+                modifier      = Modifier.fillMaxWidth()
+            )
+
+            // Bottone test
+            Button(
+                onClick = {
+                    val p = selectedProfile ?: return@Button
+                    bankVm.testParsing(notifText, p.id)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled  = notifText.isNotBlank() && selectedProfile != null,
+                colors   = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiary
+                )
+            ) {
+                Icon(Icons.Default.PlayArrow, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Testa")
+            }
+
+            // Risultato
+            testResult?.let { result ->
+                when (result) {
+                    is TestResult.Success -> {
+                        val p = result.parsed
+                        val euro = p.amountCents / 100
+                        val cents = p.amountCents % 100
+                        val date = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.ITALY)
+                            .format(java.util.Date(p.dateMillis))
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("✅ Parsing riuscito", fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Spacer(Modifier.height(4.dp))
+                                Text("Importo:   $euro,${"$cents".padStart(2, '0')} €",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Text("Merchant:  ${p.merchant}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Text("Data:      $date",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                        }
+                    }
+                    is TestResult.Failure -> {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("❌ Parsing fallito", fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer)
+                                Spacer(Modifier.height(4.dp))
+                                Text(result.reason,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer)
+                            }
+                        }
+                    }
+                    is TestResult.Empty -> {
+                        Text(
+                            "Nessun profilo bancario configurato",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+            }
         }
     }
 }
