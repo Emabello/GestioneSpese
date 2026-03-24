@@ -169,8 +169,9 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
         importo: Double,
         tipo: String,
         conto: String,
+        contoDestinazione: String? = null,
         descrizione: String?,
-        categoria: String,
+        categoria: String?,
         sottocategoria: String?
     ) {
         viewModelScope.launch {
@@ -179,26 +180,28 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
                 val isNew = editingId == null || editingId == -1
                 if (isNew) {
                     repo.add(
-                        utente = currentUtente,
-                        data = data,
-                        conto = conto,
-                        importo = importo,
-                        tipo = tipo,
-                        categoria = categoria,
-                        sottocategoria = sottocategoria,
-                        descrizione = descrizione
+                        utente            = currentUtente,
+                        data              = data,
+                        conto             = conto,
+                        contoDestinazione = contoDestinazione,
+                        importo           = importo,
+                        tipo              = tipo,
+                        categoria         = categoria,
+                        sottocategoria    = sottocategoria,
+                        descrizione       = descrizione
                     )
                 } else {
                     repo.update(
-                        id = editingId,
-                        utente = currentUtente,
-                        data = data,
-                        conto = conto,
-                        importo = importo,
-                        tipo = tipo,
-                        categoria = categoria,
-                        sottocategoria = sottocategoria,
-                        descrizione = descrizione
+                        id                = editingId,
+                        utente            = currentUtente,
+                        data              = data,
+                        conto             = conto,
+                        contoDestinazione = contoDestinazione,
+                        importo           = importo,
+                        tipo              = tipo,
+                        categoria         = categoria,
+                        sottocategoria    = sottocategoria,
+                        descrizione       = descrizione
                     )
                 }
                 repo.list(currentUtente)

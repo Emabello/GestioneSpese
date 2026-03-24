@@ -34,7 +34,7 @@ import com.emanuele.gestionespese.data.local.entities.*
         BankProfileEntity::class,
         ParseRuleEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false,
 )
 
@@ -50,6 +50,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dashboardDao(): DashboardDao
     /** DAO per i profili bancari configurabili e le relative regole di parsing. */
     abstract fun bankProfileDao(): BankProfileDao
+}
+
+/** Migration 15→16: aggiunge colonna contoDestinazione a spese (per trasferimenti tra conti). */
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE spese ADD COLUMN contoDestinazione TEXT")
+    }
 }
 
 /** Migration 14→15: aggiunge campi wizard (wizardSampleText, wizardSelections) a bank_profile. */

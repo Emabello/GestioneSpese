@@ -25,8 +25,8 @@ fun SaldoMeseWidget(
     spese: List<SpesaView>,
     modifier: Modifier = Modifier
 ) {
-    val entrate = remember(spese) { spese.filter { it.isEntrata() }.sumOf { it.importo } }
-    val uscite  = remember(spese) { spese.filter { it.isUscita()  }.sumOf { it.importo } }
+    val entrate = remember(spese) { spese.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo } }
+    val uscite  = remember(spese) { spese.filter { it.isUscita()  && !it.isTransfer() }.sumOf { it.importo } }
 
     val saldo     = entrate - uscite
     val isPositive = saldo >= 0

@@ -22,7 +22,7 @@ fun TotaleEntrateWidget(
     modifier: Modifier = Modifier
 ) {
     val totale = remember(spese) {
-        spese.filter { it.isEntrata() }.sumOf { it.importo }
+        spese.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo }
     }
 
     WidgetCard(title = "Entrate ${config.periodo.label()}", modifier = modifier) {

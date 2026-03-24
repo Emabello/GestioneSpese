@@ -61,6 +61,10 @@ fun List<SpesaView>.filteredByPeriodo(periodo: WidgetPeriodo): List<SpesaView> {
     }
 }
 
+/** `true` se il movimento è un trasferimento tra conti. */
+fun SpesaView.isTransfer(): Boolean =
+    tipo_movimento?.equals("trasferimento", ignoreCase = true) == true
+
 /** `true` se il movimento è un'entrata (in base a `tipo_movimento`). */
 fun SpesaView.isEntrata(): Boolean =
     tipo_movimento?.equals("entrata", ignoreCase = true) == true
@@ -70,12 +74,24 @@ fun SpesaView.isEntrata(): Boolean =
  * altrimenti inferisce dal campo `tipo` escludendo le entrate.
  */
 fun SpesaView.isUscita(): Boolean {
-    // Se tipo_movimento è presente usalo
     if (tipo_movimento != null) {
         return tipo_movimento.equals("uscita", ignoreCase = true)
     }
     return tipo?.contains("reddito", ignoreCase = true) != true &&
             tipo?.contains("entrata", ignoreCase = true) != true
+}
+
+/**
+ * Calcola il saldo cumulativo (tutto il tempo) per un singolo conto.
+ * I trasferimenti in uscita dal conto riducono il saldo; quelli in entrata lo aumentano.
+ * I trasferimenti NON incidono sul saldo globale ma influenzano i singoli conti.
+ */
+fun List<SpesaView>.saldoPerConto(conto: String): Double {
+    val entrate             = filter { it.conto == conto && it.isEntrata() }.sumOf { it.importo }
+    val uscite              = filter { it.conto == conto && it.isUscita() }.sumOf { it.importo }
+    val trasfUsciti         = filter { it.conto == conto && it.isTransfer() }.sumOf { it.importo }
+    val trasfEntratiInConto = filter { it.conto_destinazione == conto && it.isTransfer() }.sumOf { it.importo }
+    return entrate - uscite - trasfUsciti + trasfEntratiInConto
 }
 
 /** Restituisce l'etichetta breve del periodo per la UI (es. `"mese"`, `"30gg"`, `"anno"`). */

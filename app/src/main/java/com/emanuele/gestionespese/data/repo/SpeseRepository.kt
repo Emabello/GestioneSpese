@@ -147,6 +147,7 @@ class SpeseRepository(
         utente: String,
         data: String,
         conto: String,
+        contoDestinazione: String? = null,
         importo: Double,
         tipo: String,
         categoria: String?,
@@ -161,6 +162,7 @@ class SpeseRepository(
                     utente = utente,
                     data = data,
                     conto = conto,
+                    conto_destinazione = contoDestinazione,
                     importo = importo,
                     tipo = tipo,
                     categoria = categoria,
@@ -184,6 +186,7 @@ class SpeseRepository(
         utente: String,
         data: String,
         conto: String,
+        contoDestinazione: String? = null,
         importo: Double,
         tipo: String,
         categoria: String?,
@@ -198,6 +201,7 @@ class SpeseRepository(
                     utente = utente,
                     data = data,
                     conto = conto,
+                    conto_destinazione = contoDestinazione,
                     importo = importo,
                     tipo = tipo,
                     categoria = categoria,
@@ -469,31 +473,33 @@ private fun List<Map<String, Any?>>.toUtcEntities(
 private fun SpesaView.toEntity(utente: String): SpesaEntity {
     val parts = data?.split("-")
     return SpesaEntity(
-        id             = id,
-        utente         = utente,
-        data           = data ?: "",
-        importo        = importo,
-        tipo           = tipo ?: "",
-        tipoMovimento  = tipo_movimento,
-        conto          = conto,
-        categoria      = categoria,
-        sottocategoria = sottocategoria,
-        descrizione    = descrizione,
-        mese           = parts?.getOrNull(1)?.toIntOrNull(),
-        anno           = parts?.getOrNull(0)?.toIntOrNull()
+        id                 = id,
+        utente             = utente,
+        data               = data ?: "",
+        importo            = importo,
+        tipo               = tipo ?: "",
+        tipoMovimento      = tipo_movimento,
+        conto              = conto,
+        contoDestinazione  = conto_destinazione,
+        categoria          = categoria,
+        sottocategoria     = sottocategoria,
+        descrizione        = descrizione,
+        mese               = parts?.getOrNull(1)?.toIntOrNull(),
+        anno               = parts?.getOrNull(0)?.toIntOrNull()
     )
 }
 
 /** Converte una [SpesaEntity] da Room in un [SpesaView] usato dalla UI. */
 private fun SpesaEntity.toSpesaView() = SpesaView(
-    id             = id,
-    utente         = utente,
-    data           = data,
-    importo        = importo,
-    tipo           = tipo,
-    tipo_movimento = tipoMovimento,
-    conto          = conto,
-    categoria      = categoria,
-    sottocategoria = sottocategoria,
-    descrizione    = descrizione
+    id                 = id,
+    utente             = utente,
+    data               = data,
+    importo            = importo,
+    tipo               = tipo,
+    tipo_movimento     = tipoMovimento,
+    conto              = conto,
+    conto_destinazione = contoDestinazione,
+    categoria          = categoria,
+    sottocategoria     = sottocategoria,
+    descrizione        = descrizione
 )

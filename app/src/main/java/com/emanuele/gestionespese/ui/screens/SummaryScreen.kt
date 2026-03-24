@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -32,10 +33,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.ui.components.widgets.*
+import com.emanuele.gestionespese.ui.components.widgets.saldoPerConto
 import com.emanuele.gestionespese.ui.theme.Brand
+import com.emanuele.gestionespese.ui.theme.Danger
 import com.emanuele.gestionespese.ui.viewmodel.DashboardViewModel
 import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
 import java.time.LocalDate
@@ -71,7 +75,8 @@ fun SummaryScreen(
     vm: SpeseViewModel,
     dashVm: DashboardViewModel,
     onBack: () -> Unit,
-    onEditDashboard: () -> Unit
+    onEditDashboard: () -> Unit,
+    onContoDetail: (String) -> Unit = {}
 ) {
     val state     by vm.state.collectAsState()
     val dashState by dashVm.state.collectAsState()
@@ -246,12 +251,69 @@ fun SummaryScreen(
             groupWidgets(dashState.widgets.sortedBy { it.position })
         }
 
+        // Saldi cumulativi per conto (calcolati su TUTTI i movimenti, non solo il mese)
+        val contiSaldi = remember(state.spese, state.conti) {
+            state.conti.map { conto ->
+                conto to state.spese.saldoPerConto(conto)
+            }
+        }
+
         LazyColumn(
             modifier            = Modifier.padding(padding).fillMaxSize(),
             contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             state               = rememberLazyListState()
         ) {
+
+            // ── Barra saldi conti ─────────────────────────────────────
+            if (contiSaldi.isNotEmpty()) {
+                item(key = "saldi_conti") {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "Saldo conti",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier            = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            contiSaldi.forEach { (conto, saldo) ->
+                                val isPositive = saldo >= 0
+                                ElevatedCard(
+                                    onClick   = { onContoDetail(conto) },
+                                    modifier  = Modifier.width(140.dp),
+                                    shape     = RoundedCornerShape(12.dp),
+                                    colors    = CardDefaults.elevatedCardColors(
+                                        containerColor = MaterialTheme.colorScheme.surface
+                                    ),
+                                    elevation = CardDefaults.elevatedCardElevation(2.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text  = conto,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text  = String.format(Locale.getDefault(), "%.2f €", saldo),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isPositive) Brand else Danger
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             // ── Selettore mese — sempre in cima ──────────────────────
             item(key = "mese_selector") {
