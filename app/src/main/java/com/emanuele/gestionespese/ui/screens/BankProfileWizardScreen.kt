@@ -99,9 +99,10 @@ fun BankProfileWizardScreen(
     var showAppPicker   by remember { mutableStateOf(false) }
 
     // Step 1
-    var notificationText by rememberSaveable { mutableStateOf("") }
-    var captureActive    by rememberSaveable { mutableStateOf(false) }
-    var showCaptureDialog by remember { mutableStateOf(false) }
+    var notificationText      by rememberSaveable { mutableStateOf("") }
+    var capturedContentSource by rememberSaveable { mutableStateOf("TEXT_OR_BIG") }
+    var captureActive         by rememberSaveable { mutableStateOf(false) }
+    var showCaptureDialog     by remember { mutableStateOf(false) }
     val capturedNotifications by BankNotificationListener.capturedNotifications.collectAsState()
 
     // Step 2 — non usa rememberSaveable perché WizardSelection non è Parcelable
@@ -114,6 +115,7 @@ fun BankProfileWizardScreen(
             if (profileName.isEmpty())     profileName     = profile.displayName
             profile.wizardSampleText?.let { t -> if (notificationText.isEmpty()) notificationText = t }
             profile.wizardSelections?.let { j -> if (wizardSelections.isEmpty()) wizardSelections = selectionsFromJson(j) }
+            if (capturedContentSource == "TEXT_OR_BIG") capturedContentSource = profile.contentSource
         }
     }
 
@@ -160,10 +162,11 @@ fun BankProfileWizardScreen(
         CapturedNotificationsDialog(
             notifications = capturedNotifications,
             onDismiss     = { showCaptureDialog = false },
-            onSelected    = { text ->
-                notificationText  = text
-                captureActive     = false
-                showCaptureDialog = false
+            onSelected    = { text, contentSource ->
+                notificationText      = text
+                capturedContentSource = contentSource
+                captureActive         = false
+                showCaptureDialog     = false
                 BankNotificationListener.stopCapture()
                 // Se eravamo già allo step 1 passiamo allo step 2
                 if (currentStep <= 1) currentStep = 2
@@ -308,6 +311,7 @@ fun BankProfileWizardScreen(
                                     selectedProfile!!.copy(
                                         displayName      = profileName.trim(),
                                         packageName      = selectedPackage.trim(),
+                                        contentSource    = capturedContentSource,
                                         wizardSampleText = notificationText,
                                         wizardSelections = selectionsToJson(wizardSelections)
                                     )
@@ -315,6 +319,7 @@ fun BankProfileWizardScreen(
                                     BankProfileEntity(
                                         displayName      = profileName.trim(),
                                         packageName      = selectedPackage.trim(),
+                                        contentSource    = capturedContentSource,
                                         wizardSampleText = notificationText,
                                         wizardSelections = selectionsToJson(wizardSelections)
                                     )
@@ -883,7 +888,7 @@ private fun PreviewResultRow(
 private fun CapturedNotificationsDialog(
     notifications: List<CapturedNotification>,
     onDismiss: () -> Unit,
-    onSelected: (text: String) -> Unit
+    onSelected: (text: String, contentSource: String) -> Unit
 ) {
     val sdf = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
 
@@ -892,24 +897,26 @@ private fun CapturedNotificationsDialog(
         title = { Text("Notifiche ricevute (${notifications.size})") },
         text  = {
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.heightIn(max = 400.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.heightIn(max = 480.dp)
             ) {
                 items(notifications.reversed()) { notif ->
+                    val combined = run {
+                        val body = notif.bigText.ifBlank { notif.text }
+                        listOf(notif.title, body).filter { it.isNotBlank() }.joinToString("\n")
+                    }
+
                     Surface(
-                        color     = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape     = RoundedCornerShape(10.dp),
-                        modifier  = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelected(notif.text) }
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(
-                            modifier = Modifier.padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            // ── Header (non cliccabile) ──────────────────────
                             Row(
                                 verticalAlignment     = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(bottom = 6.dp)
                             ) {
                                 Text(
                                     notif.appName,
@@ -925,13 +932,58 @@ private fun CapturedNotificationsDialog(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Text(
-                                notif.text,
-                                style    = MaterialTheme.typography.bodySmall,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis,
-                                color    = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+
+                            // ── Righe selezionabili ──────────────────────────
+                            val fields = buildList {
+                                if (notif.title.isNotBlank())
+                                    add(Triple("🏷️ TITOLO", notif.title, "TITLE"))
+                                if (notif.text.isNotBlank())
+                                    add(Triple("📄 TESTO", notif.text, "TEXT"))
+                                if (notif.bigText.isNotBlank() && notif.bigText != notif.text)
+                                    add(Triple("📋 TESTO ESTESO", notif.bigText, "BIG_TEXT"))
+                                if (notif.title.isNotBlank() &&
+                                    (notif.text.isNotBlank() || notif.bigText.isNotBlank()))
+                                    add(Triple("🔗 COMBINATO", combined, "TITLE_AND_TEXT"))
+                            }
+
+                            fields.forEachIndexed { idx, (label, fieldText, contentSource) ->
+                                if (idx > 0) HorizontalDivider(
+                                    modifier  = Modifier.padding(vertical = 2.dp),
+                                    thickness = 0.5.dp,
+                                    color     = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                )
+                                Row(
+                                    verticalAlignment     = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable { onSelected(fieldText, contentSource) }
+                                        .padding(vertical = 6.dp, horizontal = 4.dp)
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            label,
+                                            style      = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color      = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            fieldText,
+                                            style    = MaterialTheme.typography.bodySmall,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color    = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Icon(
+                                        Icons.Default.ChevronRight,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint     = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 }
