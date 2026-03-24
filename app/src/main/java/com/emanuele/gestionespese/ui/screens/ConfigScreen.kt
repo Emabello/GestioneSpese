@@ -87,6 +87,7 @@ fun ConfigScreen(onBack: () -> Unit) {
     var isRefreshing    by remember { mutableStateOf(false) }
     // id record con spinner locale
     var loadingRecordId by remember { mutableStateOf<String?>(null) }
+    var isMutating      by remember { mutableStateOf(false) }
     var errorMsg        by remember { mutableStateOf<String?>(null) }
 
     // ── Dialog stato ──────────────────────────────────────────────────
@@ -251,6 +252,7 @@ fun ConfigScreen(onBack: () -> Unit) {
             else -> {}
         }
     }
+    BackHandler(enabled = isMutating) { /* blocca back durante mutazioni */ }
 
     // ── Snackbar ──────────────────────────────────────────────────────
     var snackMsg          by remember { mutableStateOf<String?>(null) }
@@ -459,6 +461,17 @@ fun ConfigScreen(onBack: () -> Unit) {
         }
     }
 
+    suspend fun resolveInsertedTipologiaId(descrizione: String, tipoMovimento: String): String? {
+        val remote = api.getTipi().data ?: return null
+        val match = remote
+            .filter {
+                (it["descrizione"]?.toString()?.trim().orEmpty() == descrizione.trim()) &&
+                        (it["tipo_movimento"]?.toString()?.trim().orEmpty() == tipoMovimento.trim())
+            }
+            .maxByOrNull { extractId(it["id"]).toIntOrNull() ?: Int.MIN_VALUE }
+        return match?.let { extractId(it["id"]) }?.takeIf { it.isNotBlank() }
+    }
+
     // ── Dialog Aggiungi / Modifica ────────────────────────────────────
     if (showAddDialog || showEditDialog) {
         ConfigRecordDialog(
@@ -477,6 +490,10 @@ fun ConfigScreen(onBack: () -> Unit) {
                     val editingRecordId = selectedRecord?.let(::recordId)
                     val isEditing = showEditDialog && selectedRecord != null
                     var targetLoadingRecordId: String? = editingRecordId
+                    isMutating = true
+                    if (isEditing && !editingRecordId.isNullOrBlank()) {
+                        loadingRecordId = editingRecordId
+                    }
                     showAddDialog = false
                     showEditDialog = false
                     try {
@@ -502,9 +519,16 @@ fun ConfigScreen(onBack: () -> Unit) {
                             )
 
                             // Recupera l'id del record appena creato
-                            val newId = insertResp.data
+                            var newId = insertResp.data
                                 ?.let { it["id"] ?: it["insertedId"] }
                                 ?.let { v -> (v as? Double)?.toInt()?.toString() ?: v.toString() }
+
+                            if (dialogTable == ConfigTable.TIPOLOGIA && newId.isNullOrBlank()) {
+                                newId = resolveInsertedTipologiaId(
+                                    descrizione = data["descrizione"]?.toString().orEmpty(),
+                                    tipoMovimento = data["tipo_movimento"]?.toString().orEmpty()
+                                )
+                            }
 
                             // ── Auto-associazione in base al tipo di record creato ──
                             // Gli id in UTCS devono essere solo numerici (es. "1", "4")
@@ -662,6 +686,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                         if (loadingRecordId == targetLoadingRecordId) {
                             loadingRecordId = null
                         }
+                        isMutating = false
                     }
                 }
             }
@@ -681,6 +706,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                     showDeleteConfirm = false
                     if (thisId.isNotBlank()) {
                         loadingRecordId = thisId
+                        isMutating = true
                         scope.launch {
                             try {
                                 when (dialogTable) {
@@ -711,7 +737,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                 refreshCurrentLevel(showTopLoading = false)
                             } catch (e: Exception) {
                                 errorMsg = e.message
-                            } finally { loadingRecordId = null }
+                            } finally { loadingRecordId = null; isMutating = false }
                         }
                     }
                 }) { Text("Elimina", color = MaterialTheme.colorScheme.error) }
@@ -734,6 +760,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                 },
                 navigationIcon = {
                     IconButton(onClick = {
+                        if (isMutating) return@IconButton
                         if (canGoBack) {
                             when (drillLevel) {
                                 DrillLevel.SOTTOCATEGORIA -> { drillLevel = DrillLevel.CATEGORIA;  selectedCat  = null }
@@ -741,14 +768,14 @@ fun ConfigScreen(onBack: () -> Unit) {
                                 else -> {}
                             }
                         } else onBack()
-                    }) {
+                    }, enabled = !isMutating) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro")
                     }
                 },
                 actions = {
                     IconButton(
-                        onClick = { scope.launch { refreshCurrentLevel() } },
-                        enabled = !isRefreshing && !isLoading
+                        onClick = { if (!isMutating) scope.launch { refreshCurrentLevel() } },
+                        enabled = !isRefreshing && !isLoading && !isMutating
                     ) {
                         if (isRefreshing) {
                             CircularProgressIndicator(
@@ -767,10 +794,12 @@ fun ConfigScreen(onBack: () -> Unit) {
         floatingActionButton = {
             FloatingActionButton(
                 onClick        = {
+                    if (isMutating) return@FloatingActionButton
                     dialogTable   = currentTable
                     showAddDialog = true
                 },
-                containerColor = Brand
+                containerColor = Brand,
+                modifier = Modifier
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Aggiungi", tint = Color.White)
             }
@@ -780,16 +809,19 @@ fun ConfigScreen(onBack: () -> Unit) {
                 NavigationBarItem(
                     selected = activeTab == ConfigTab.UTCS,
                     onClick  = {
+                        if (isMutating) return@NavigationBarItem
                         activeTab    = ConfigTab.UTCS
                         drillLevel   = DrillLevel.TIPOLOGIA
                         selectedTipo = null; selectedCat = null
                     },
+                    enabled = !isMutating,
                     icon  = {},
                     label = { Text("UTCS") }
                 )
                 NavigationBarItem(
                     selected = activeTab == ConfigTab.CONTI,
-                    onClick  = { activeTab = ConfigTab.CONTI },
+                    onClick  = { if (!isMutating) activeTab = ConfigTab.CONTI },
+                    enabled = !isMutating,
                     icon  = {},
                     label = { Text("Conti") }
                 )
@@ -843,60 +875,92 @@ fun ConfigScreen(onBack: () -> Unit) {
                             }
                         },
                         onEdit   = {
-                            dialogTable    = currentTable
-                            selectedRecord = record
-                            showEditDialog = true
+                            if (!isMutating) {
+                                dialogTable    = currentTable
+                                selectedRecord = record
+                                showEditDialog = true
+                            }
                         },
                         onDelete = {
-                            dialogTable    = currentTable
-                            selectedRecord = record
-                            showDeleteConfirm = true
+                            if (!isMutating) {
+                                dialogTable    = currentTable
+                                selectedRecord = record
+                                showDeleteConfirm = true
+                            }
                         },
                         onToggleAttivo = { newVal ->
-                            loadingRecordId = thisId
-                            scope.launch {
-                                try {
-                                    when (currentTable) {
-                                        ConfigTable.TIPOLOGIA,
-                                        ConfigTable.CATEGORIA,
-                                        ConfigTable.SOTTOCATEGORIA -> {
-                                            val rowsToUpdate = findUtcsRowsForRecord(record, currentTable)
-                                            rowsToUpdate.forEach { utcsRow ->
-                                                val utcsId = (utcsRow["id"] as? Double)?.toInt()
-                                                    ?: utcsRow["id"].toString().toIntOrNull()
-                                                    ?: return@forEach
-                                                api.updateRecord(
-                                                    GenericUpdateRequest(
-                                                        resource = ConfigTable.UTCS.resource,
-                                                        id       = utcsId,
-                                                        data     = mapOf("attivo" to newVal).sanitizeForSheet()
+                            if (!isMutating) {
+                                loadingRecordId = thisId
+                                isMutating = true
+                                scope.launch {
+                                    try {
+                                        when (currentTable) {
+                                            ConfigTable.TIPOLOGIA,
+                                            ConfigTable.CATEGORIA,
+                                            ConfigTable.SOTTOCATEGORIA -> {
+                                                val rowsToUpdate = findUtcsRowsForRecord(record, currentTable)
+                                                rowsToUpdate.forEach { utcsRow ->
+                                                    val utcsId = (utcsRow["id"] as? Double)?.toInt()
+                                                        ?: utcsRow["id"].toString().toIntOrNull()
+                                                        ?: return@forEach
+                                                    api.updateRecord(
+                                                        GenericUpdateRequest(
+                                                            resource = ConfigTable.UTCS.resource,
+                                                            id       = utcsId,
+                                                            data     = mapOf("attivo" to newVal).sanitizeForSheet()
+                                                        )
                                                     )
-                                                )
+                                                }
                                             }
-                                        }
-                                        ConfigTable.CONTO -> {
-                                            val rowsToUpdate = findUcRowsForRecord(record)
-                                            rowsToUpdate.forEach { ucRow ->
-                                                val ucId = (ucRow["id"] as? Double)?.toInt()
-                                                    ?: ucRow["id"].toString().toIntOrNull()
-                                                    ?: return@forEach
-                                                api.updateRecord(
-                                                    GenericUpdateRequest(
-                                                        resource = ConfigTable.UC.resource,
-                                                        id       = ucId,
-                                                        data     = mapOf("attivo" to newVal).sanitizeForSheet()
+                                            ConfigTable.CONTO -> {
+                                                val rowsToUpdate = findUcRowsForRecord(record)
+                                                rowsToUpdate.forEach { ucRow ->
+                                                    val ucId = (ucRow["id"] as? Double)?.toInt()
+                                                        ?: ucRow["id"].toString().toIntOrNull()
+                                                        ?: return@forEach
+                                                    api.updateRecord(
+                                                        GenericUpdateRequest(
+                                                            resource = ConfigTable.UC.resource,
+                                                            id       = ucId,
+                                                            data     = mapOf("attivo" to newVal).sanitizeForSheet()
+                                                        )
                                                     )
-                                                )
+                                                }
                                             }
+                                            else -> Unit
                                         }
-                                        else -> Unit
+                                        refreshCurrentLevel(showTopLoading = false)
+                                    } catch (e: Exception) { errorMsg = e.message }
+                                    finally { loadingRecordId = null; isMutating = false }
+                                        }
                                     }
-                                    refreshCurrentLevel(showTopLoading = false)
-                                } catch (e: Exception) { errorMsg = e.message }
-                                finally { loadingRecordId = null }
+                                }
                             }
-                        }
                     )
+                }
+            }
+        }
+    }
+
+    if (isMutating) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(0.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.35f),
+                modifier = Modifier.fillMaxSize()
+            ) {}
+            Card {
+                Row(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text("Aggiornamento in corso…")
                 }
             }
         }
@@ -1045,6 +1109,16 @@ private fun ConfigRecordDialog(
     var contoExpanded    by remember { mutableStateOf(false) }
     var tipoExpanded     by remember { mutableStateOf(false) }
     var sottoExpanded    by remember { mutableStateOf(false) }
+    var attemptedSubmit  by remember { mutableStateOf(false) }
+
+    val descrizioneRequired = table == ConfigTable.TIPOLOGIA ||
+            table == ConfigTable.CATEGORIA ||
+            table == ConfigTable.SOTTOCATEGORIA ||
+            table == ConfigTable.CONTO
+    val categoriaRequired = table == ConfigTable.SOTTOCATEGORIA && preselectedCatId == null
+    val descrizioneError = attemptedSubmit && descrizioneRequired && descrizione.isBlank()
+    val categoriaError = attemptedSubmit && categoriaRequired && idCategoria.isBlank()
+    val hasValidationErrors = descrizioneError || categoriaError
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1055,7 +1129,10 @@ private fun ConfigRecordDialog(
 
                     ConfigTable.TIPOLOGIA -> {
                         OutlinedTextField(value = descrizione, onValueChange = { descrizione = it },
-                            label = { Text("Descrizione") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            label = { Text("Descrizione *") },
+                            isError = descrizioneError,
+                            supportingText = { if (descrizioneError) Text("Campo obbligatorio") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
                         ExposedDropdownMenuBox(expanded = tipoMovExpanded, onExpandedChange = { tipoMovExpanded = !tipoMovExpanded }) {
                             OutlinedTextField(value = tipoMovimento, onValueChange = {}, readOnly = true,
                                 label = { Text("Tipo movimento") },
@@ -1072,7 +1149,10 @@ private fun ConfigRecordDialog(
 
                     ConfigTable.CATEGORIA -> {
                         OutlinedTextField(value = descrizione, onValueChange = { descrizione = it },
-                            label = { Text("Descrizione") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            label = { Text("Descrizione *") },
+                            isError = descrizioneError,
+                            supportingText = { if (descrizioneError) Text("Campo obbligatorio") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
 
                     ConfigTable.SOTTOCATEGORIA -> {
@@ -1098,6 +1178,8 @@ private fun ConfigRecordDialog(
                             ExposedDropdownMenuBox(expanded = catExpanded, onExpandedChange = { catExpanded = !catExpanded }) {
                                 OutlinedTextField(value = idCategoria.ifBlank { "Seleziona categoria…" },
                                     onValueChange = {}, readOnly = true, label = { Text("Categoria") },
+                                    isError = categoriaError,
+                                    supportingText = { if (categoriaError) Text("Campo obbligatorio") },
                                     modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(catExpanded) })
                                 ExposedDropdownMenu(expanded = catExpanded, onDismissRequest = { catExpanded = false }) {
@@ -1110,12 +1192,18 @@ private fun ConfigRecordDialog(
                             }
                         }
                         OutlinedTextField(value = descrizione, onValueChange = { descrizione = it },
-                            label = { Text("Descrizione") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            label = { Text("Descrizione *") },
+                            isError = descrizioneError,
+                            supportingText = { if (descrizioneError) Text("Campo obbligatorio") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
 
                     ConfigTable.CONTO -> {
                         OutlinedTextField(value = descrizione, onValueChange = { descrizione = it },
-                            label = { Text("Descrizione") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            label = { Text("Descrizione *") },
+                            isError = descrizioneError,
+                            supportingText = { if (descrizioneError) Text("Campo obbligatorio") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
 
                     ConfigTable.UC -> {
@@ -1184,6 +1272,8 @@ private fun ConfigRecordDialog(
         },
         confirmButton = {
             TextButton(onClick = {
+                attemptedSubmit = true
+                if (hasValidationErrors) return@TextButton
                 // Payload pulito — solo i campi editabili della tabella
                 val payload: Map<String, Any?> = when (table) {
                     ConfigTable.TIPOLOGIA      -> mapOf(
