@@ -22,7 +22,11 @@ enum class WidgetType {
     /** Lista degli ultimi movimenti registrati. */
     ULTIMI_MOVIMENTI,
     /** Classifica delle categorie per importo speso. */
-    TOP_CATEGORIE
+    TOP_CATEGORIE,
+    /** Saldo di un conto specifico. */
+    SALDO_CONTO,
+    /** Andamento mensile (ultimi 6 mesi). */
+    ANDAMENTO_MENSILE
 }
 
 /** Dimensione del widget nella griglia della dashboard (2 colonne). */
@@ -60,7 +64,8 @@ data class WidgetConfig(
     val size: WidgetSize = WidgetSize.WIDE,
     val position: Int = 0,
     val periodo: WidgetPeriodo = WidgetPeriodo.MESE_CORRENTE,
-    val topN: Int = 5
+    val topN: Int = 5,
+    val contoFilter: String? = null
 )
 
 /**
@@ -75,5 +80,7 @@ fun defaultDashboardLayout(): List<WidgetConfig> = listOf(
     WidgetConfig(type = WidgetType.TOTALE_ENTRATE,     size = WidgetSize.SMALL, position = 2),
     WidgetConfig(type = WidgetType.GRAFICO_TORTA,      size = WidgetSize.WIDE,  position = 3),
     WidgetConfig(type = WidgetType.TOP_CATEGORIE,      size = WidgetSize.WIDE,  position = 4),
-    WidgetConfig(type = WidgetType.ULTIMI_MOVIMENTI,   size = WidgetSize.WIDE,  position = 5)
+    WidgetConfig(type = WidgetType.ULTIMI_MOVIMENTI,   size = WidgetSize.WIDE,  position = 5),
+    WidgetConfig(type = WidgetType.SALDO_CONTO,        size = WidgetSize.WIDE,  position = 6),
+    WidgetConfig(type = WidgetType.ANDAMENTO_MENSILE,  size = WidgetSize.WIDE,  position = 7)
 )

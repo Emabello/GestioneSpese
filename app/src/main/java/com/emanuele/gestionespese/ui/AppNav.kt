@@ -86,6 +86,7 @@ fun AppNav(vm: SpeseViewModel) {
     }
 
     val context = LocalContext.current
+    val utente = (context.applicationContext as MyApp).currentUserLabel.orEmpty()
     val dashVm: DashboardViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -97,11 +98,17 @@ fun AppNav(vm: SpeseViewModel) {
                 @Suppress("UNCHECKED_CAST")
                 return DashboardViewModel(
                     repo   = repo,
-                    utente = app.currentUserLabel ?: ""
+                    utente = app.currentUserLabel.orEmpty()
                 ) as T
             }
         }
     )
+    LaunchedEffect(utente) {
+        if (utente.isNotBlank()) {
+            dashVm.syncFromRemote()
+            dashVm.loadLayout()
+        }
+    }
 
     val bankProfileVm: BankProfileViewModel = viewModel(
         factory = BankProfileViewModel.factory(

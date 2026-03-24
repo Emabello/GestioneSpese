@@ -59,7 +59,14 @@ class SpeseRepository(
      * @param utente ID dell'utente.
      */
     suspend fun syncSpese(utente: String) {
-        val remoteList = api.getSpese(utente = utente).data ?: emptyList()
+        val response = api.getSpese(utente = utente)
+        if (!response.error.isNullOrBlank()) {
+            throw IllegalStateException("Errore sincronizzazione movimenti: ${response.error}")
+        }
+        if (response.ok == false) {
+            throw IllegalStateException("Errore sincronizzazione movimenti dal server")
+        }
+        val remoteList = response.data ?: return
         val entities = remoteList.map { it.toEntity(utente) }
         spesaDao.clearByUtente(utente)
         spesaDao.upsertAll(entities)
@@ -147,8 +154,10 @@ class SpeseRepository(
         utente: String,
         data: String,
         conto: String,
+        contoDestinazione: String? = null,
         importo: Double,
         tipo: String,
+        tipoMovimento: String? = null,
         categoria: String?,
         sottocategoria: String?,
         descrizione: String?
@@ -161,8 +170,10 @@ class SpeseRepository(
                     utente = utente,
                     data = data,
                     conto = conto,
+                    conto_destinazione = contoDestinazione,
                     importo = importo,
                     tipo = tipo,
+                    tipo_movimento = tipoMovimento,
                     categoria = categoria,
                     sottocategoria = sottocategoria,
                     descrizione = descrizione
@@ -184,8 +195,10 @@ class SpeseRepository(
         utente: String,
         data: String,
         conto: String,
+        contoDestinazione: String? = null,
         importo: Double,
         tipo: String,
+        tipoMovimento: String? = null,
         categoria: String?,
         sottocategoria: String?,
         descrizione: String?
@@ -198,8 +211,10 @@ class SpeseRepository(
                     utente = utente,
                     data = data,
                     conto = conto,
+                    conto_destinazione = contoDestinazione,
                     importo = importo,
                     tipo = tipo,
+                    tipo_movimento = tipoMovimento,
                     categoria = categoria,
                     sottocategoria = sottocategoria,
                     descrizione = descrizione

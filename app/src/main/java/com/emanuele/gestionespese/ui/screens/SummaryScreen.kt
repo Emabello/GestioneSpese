@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.OpenInFull
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -78,6 +79,7 @@ fun SummaryScreen(
 
     var editMode     by remember { mutableStateOf(false) }
     var showAddPopup by remember { mutableStateOf(false) }
+    var configuringWidget by remember { mutableStateOf<WidgetConfig?>(null) }
 
     // ── Selettore mese ────────────────────────────────────────────────
     val today = remember { LocalDate.now() }
@@ -106,6 +108,22 @@ fun SummaryScreen(
     }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val totaleEntrateMese = remember(speseFiltered) { speseFiltered.filter { it.isEntrata() }.sumOf { it.importo } }
+    val totaleUsciteMese = remember(speseFiltered) { speseFiltered.filter { it.isUscita() }.sumOf { it.importo } }
+    val saldoMese = totaleEntrateMese - totaleUsciteMese
+
+    if (configuringWidget != null) {
+        WidgetConfigSheet(
+            widget = configuringWidget!!,
+            conti = state.conti,
+            onDismiss = { configuringWidget = null },
+            onSave = { updated ->
+                dashVm.updateWidgetConfig(updated.id, updated)
+                configuringWidget = null
+            }
+        )
+    }
 
     // ── Popup aggiungi widget ─────────────────────────────────────────
     if (showAddPopup) {
@@ -221,6 +239,9 @@ fun SummaryScreen(
                                     contentDescription = "Aggiungi widget",
                                     tint = Brand)
                             }
+                            TextButton(onClick = { onEditDashboard() }) {
+                                Text("Gestisci")
+                            }
                             TextButton(onClick = { editMode = false }) {
                                 Text("Fine", color = Brand)
                             }
@@ -317,6 +338,26 @@ fun SummaryScreen(
                     }
                 }
             }
+            item(key = "patrimonio_header") {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                ) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Patrimonio mese selezionato", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            "${String.format(Locale.getDefault(), "%.2f", saldoMese)} €",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = if (saldoMese >= 0) Brand else MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            "Entrate ${String.format(Locale.getDefault(), "%.2f", totaleEntrateMese)} € · Uscite ${String.format(Locale.getDefault(), "%.2f", totaleUsciteMese)} €",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
 
             // ── Widget rows ──────────────────────────────────────────
             if (rows.isEmpty()) {
@@ -356,6 +397,7 @@ fun SummaryScreen(
                                     onLongPress = { editMode = true },
                                     onDelete    = { dashVm.removeWidget(widget.id) },
                                     onResize    = { dashVm.toggleSize(widget.id) },
+                                    onConfigure = { configuringWidget = widget },
                                     modifier    = Modifier.weight(1f)
                                 ) {
                                     WidgetRenderer(
@@ -375,6 +417,7 @@ fun SummaryScreen(
                             onLongPress = { editMode = true },
                             onDelete    = { dashVm.removeWidget(widget.id) },
                             onResize    = { dashVm.toggleSize(widget.id) },
+                            onConfigure = { configuringWidget = widget },
                             modifier    = Modifier.fillMaxWidth()
                         ) {
                             WidgetRenderer(
@@ -400,6 +443,7 @@ private fun EditableWidgetWrapper(
     onLongPress: () -> Unit,
     onDelete: () -> Unit,
     onResize: () -> Unit,
+    onConfigure: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
@@ -467,6 +511,95 @@ private fun EditableWidgetWrapper(
                     modifier = Modifier.size(14.dp)
                 )
             }
+        }
+
+        AnimatedVisibility(
+            visible  = editMode,
+            enter    = fadeIn() + scaleIn(),
+            exit     = fadeOut() + scaleOut(),
+            modifier = Modifier.align(Alignment.TopStart)
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(4.dp)
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .combinedClickable(onClick = onConfigure),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(shape = CircleShape, color = Brand, modifier = Modifier.fillMaxSize()) { }
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Configura",
+                    tint = Color.White,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WidgetConfigSheet(
+    widget: WidgetConfig,
+    conti: List<String>,
+    onDismiss: () -> Unit,
+    onSave: (WidgetConfig) -> Unit
+) {
+    var periodo by remember(widget.id) { mutableStateOf(widget.periodo) }
+    var topN by remember(widget.id) { mutableIntStateOf(widget.topN.coerceIn(1, 20)) }
+    var conto by remember(widget.id) { mutableStateOf(widget.contoFilter.orEmpty()) }
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Configura ${widget.type.displayName()}", style = MaterialTheme.typography.titleLarge)
+            Text("Periodo", style = MaterialTheme.typography.labelLarge)
+            WidgetPeriodo.entries.forEach { per ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(per.label())
+                    RadioButton(selected = periodo == per, onClick = { periodo = per })
+                }
+            }
+            if (widget.type == WidgetType.TOP_CATEGORIE || widget.type == WidgetType.ULTIMI_MOVIMENTI) {
+                Text("Numero elementi: $topN", style = MaterialTheme.typography.labelLarge)
+                Slider(value = topN.toFloat(), onValueChange = { topN = it.toInt() }, valueRange = 1f..20f)
+            }
+            if (widget.type == WidgetType.SALDO_CONTO) {
+                var expanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+                    OutlinedTextField(
+                        value = conto,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Conto") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        conti.forEach { c ->
+                            DropdownMenuItem(
+                                text = { Text(c) },
+                                onClick = { conto = c; expanded = false }
+                            )
+                        }
+                    }
+                }
+            }
+            Button(
+                onClick = {
+                    onSave(
+                        widget.copy(
+                            periodo = periodo,
+                            topN = topN,
+                            contoFilter = conto.ifBlank { null }
+                        )
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Salva configurazione") }
+            Spacer(Modifier.height(12.dp))
         }
     }
 }

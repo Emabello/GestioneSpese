@@ -37,7 +37,7 @@ fun UltimiMovimentiWidget(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             ultimi.forEachIndexed { idx, spesa ->
-                val isEntrata = spesa.tipo?.contains("entrata", ignoreCase = true) == true
+                val isEntrata = spesa.isEntrata()
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,

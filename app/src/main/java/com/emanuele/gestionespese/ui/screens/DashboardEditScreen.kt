@@ -165,6 +165,8 @@ fun WidgetType.displayName(): String = when (this) {
     WidgetType.GRAFICO_TORTA    -> "Grafico torta"
     WidgetType.ULTIMI_MOVIMENTI -> "Ultimi movimenti"
     WidgetType.TOP_CATEGORIE    -> "Top categorie"
+    WidgetType.SALDO_CONTO      -> "Saldo conto"
+    WidgetType.ANDAMENTO_MENSILE -> "Andamento mensile"
 }
 
 fun WidgetType.description(): String = when (this) {
@@ -174,4 +176,6 @@ fun WidgetType.description(): String = when (this) {
     WidgetType.GRAFICO_TORTA    -> "Distribuzione spese per categoria"
     WidgetType.ULTIMI_MOVIMENTI -> "Gli ultimi N movimenti inseriti"
     WidgetType.TOP_CATEGORIE    -> "Le categorie con più spese"
+    WidgetType.SALDO_CONTO      -> "Saldo e movimenti di un conto specifico"
+    WidgetType.ANDAMENTO_MENSILE -> "Trend saldo ultimi 6 mesi"
 }

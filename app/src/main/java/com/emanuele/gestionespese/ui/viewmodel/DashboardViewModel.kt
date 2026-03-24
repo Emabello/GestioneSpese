@@ -47,6 +47,7 @@ class DashboardViewModel(
 
     init {
         loadLayout()
+        syncFromRemote()
     }
 
     /** Carica il layout dal repository e aggiorna lo stato. */
@@ -55,6 +56,18 @@ class DashboardViewModel(
             _state.update { it.copy(isLoading = true) }
             val widgets = repo.getLayout(utente)
             _state.update { it.copy(widgets = widgets, isLoading = false) }
+        }
+    }
+
+    /** Forza una sync dal backend per evitare layout stale dopo riapertura app. */
+    fun syncFromRemote() {
+        viewModelScope.launch {
+            runCatching {
+                repo.syncFromRemote(utente)
+                repo.getLayout(utente)
+            }.onSuccess { widgets ->
+                _state.update { it.copy(widgets = widgets) }
+            }
         }
     }
 
@@ -140,6 +153,12 @@ class DashboardViewModel(
                 size = if (w.size == WidgetSize.WIDE) WidgetSize.SMALL else WidgetSize.WIDE
             ) else w
         }
+        saveLayout(updated)
+    }
+
+    /** Aggiorna la configurazione di un singolo widget (periodo/topN/conto filter). */
+    fun updateWidgetConfig(id: String, config: WidgetConfig) {
+        val updated = _state.value.widgets.map { if (it.id == id) config else it }
         saveLayout(updated)
     }
 }

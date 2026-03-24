@@ -222,6 +222,11 @@ fun SpesaFormScreen(
     val contiOptions = remember(state.conti) {
         state.conti.map { it.trim() }.filter { it.isNotBlank() }.distinct().sorted()
     }
+    val tipoMovimento = remember(tipo, utcsUserActive) {
+        utcsUserActive.firstOrNull {
+            it.tipologia.trim().equals(tipo.trim(), ignoreCase = true)
+        }?.tipoMovimento ?: "uscita"
+    }
 
     // ── Dialogs ───────────────────────────────────────────────────────
     if (showErrorPopup) {
@@ -329,6 +334,7 @@ fun SpesaFormScreen(
                                     data           = data,
                                     importo        = importoValue ?: 0.0,
                                     tipo           = tipo,
+                                    tipoMovimento  = tipoMovimento,
                                     conto          = conto,
                                     descrizione    = note.trim().ifBlank { null },
                                     categoria      = categoria.trim(),

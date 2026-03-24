@@ -168,7 +168,9 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
         data: String,
         importo: Double,
         tipo: String,
+        tipoMovimento: String?,
         conto: String,
+        contoDestinazione: String? = null,
         descrizione: String?,
         categoria: String,
         sottocategoria: String?
@@ -182,8 +184,10 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
                         utente = currentUtente,
                         data = data,
                         conto = conto,
+                        contoDestinazione = contoDestinazione,
                         importo = importo,
                         tipo = tipo,
+                        tipoMovimento = tipoMovimento,
                         categoria = categoria,
                         sottocategoria = sottocategoria,
                         descrizione = descrizione
@@ -194,8 +198,10 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
                         utente = currentUtente,
                         data = data,
                         conto = conto,
+                        contoDestinazione = contoDestinazione,
                         importo = importo,
                         tipo = tipo,
+                        tipoMovimento = tipoMovimento,
                         categoria = categoria,
                         sottocategoria = sottocategoria,
                         descrizione = descrizione

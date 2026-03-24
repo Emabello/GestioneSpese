@@ -723,6 +723,16 @@ fun ConfigScreen(onBack: () -> Unit) {
                                         snackMsg = if (rowsToDelete.isEmpty()) "Nessuna riga UTCS da eliminare" else "Relazione UTCS eliminata"
                                     }
                                     ConfigTable.CONTO -> {
+                                        val contoId = (record["id"] as? Double)?.toInt()
+                                            ?: record["id"]?.toString()?.toIntOrNull()
+                                        if (contoId != null) {
+                                            api.deleteRecord(
+                                                GenericDeleteRequest(
+                                                    resource = ConfigTable.CONTO.resource,
+                                                    id = contoId
+                                                )
+                                            )
+                                        }
                                         val rowsToDelete = findUcRowsForRecord(record)
                                         rowsToDelete.forEach { ucRow ->
                                             val ucId = (ucRow["id"] as? Double)?.toInt()
@@ -730,7 +740,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                                 ?: return@forEach
                                             api.deleteRecord(GenericDeleteRequest(resource = ConfigTable.UC.resource, id = ucId))
                                         }
-                                        snackMsg = if (rowsToDelete.isEmpty()) "Nessuna riga UC da eliminare" else "Relazione conto eliminata"
+                                        snackMsg = "Conto eliminato${if (rowsToDelete.isNotEmpty()) " e link UC puliti" else ""}"
                                     }
                                     else -> Unit
                                 }
@@ -913,6 +923,17 @@ fun ConfigScreen(onBack: () -> Unit) {
                                                 }
                                             }
                                             ConfigTable.CONTO -> {
+                                                val contoId = (record["id"] as? Double)?.toInt()
+                                                    ?: record["id"]?.toString()?.toIntOrNull()
+                                                if (contoId != null) {
+                                                    api.updateRecord(
+                                                        GenericUpdateRequest(
+                                                            resource = ConfigTable.CONTO.resource,
+                                                            id = contoId,
+                                                            data = mapOf("attivo" to newVal).sanitizeForSheet()
+                                                        )
+                                                    )
+                                                }
                                                 val rowsToUpdate = findUcRowsForRecord(record)
                                                 rowsToUpdate.forEach { ucRow ->
                                                     val ucId = (ucRow["id"] as? Double)?.toInt()

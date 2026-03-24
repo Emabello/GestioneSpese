@@ -26,5 +26,7 @@ fun WidgetRenderer(
         WidgetType.GRAFICO_TORTA    -> GraficoTortaWidget(config, spese, modifier)
         WidgetType.ULTIMI_MOVIMENTI -> UltimiMovimentiWidget(config, spese, modifier)
         WidgetType.TOP_CATEGORIE    -> TopCategorieWidget(config, spese, modifier)
+        WidgetType.SALDO_CONTO      -> SaldoContoWidget(config, spese, modifier)
+        WidgetType.ANDAMENTO_MENSILE -> AndamentoMensileWidget(config, spese, modifier)
     }
 }
