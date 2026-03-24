@@ -34,9 +34,9 @@ import com.emanuele.gestionespese.MyApp
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.data.repo.stripFormulaFields
 import com.emanuele.gestionespese.ui.theme.Brand
-import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 // ── Tab principali ────────────────────────────────────────────────────
@@ -64,11 +64,12 @@ private val READONLY_FIELDS = setOf(
 private fun Map<String, Any?>.safePayload(): Map<String, Any?> =
     filterKeys { it.lowercase() !in READONLY_FIELDS }
 
+private fun Map<String, Any?>.sanitizeForSheet(): Map<String, Any?> =
+    safePayload().stripFormulaFields()
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
-    val vmState by vm.state.collectAsState()
-
+fun ConfigScreen(onBack: () -> Unit) {
     val context       = LocalContext.current
     val app           = context.applicationContext as MyApp
     val api           = app.api
@@ -84,8 +85,9 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
     // ── Stato UI ──────────────────────────────────────────────────────
     var isLoading       by remember { mutableStateOf(false) }
     var isRefreshing    by remember { mutableStateOf(false) }
-    // Map id→true per mostrare loading su una specifica card
+    // id record con spinner locale
     var loadingRecordId by remember { mutableStateOf<String?>(null) }
+    var isMutating      by remember { mutableStateOf(false) }
     var errorMsg        by remember { mutableStateOf<String?>(null) }
 
     // ── Dialog stato ──────────────────────────────────────────────────
@@ -108,6 +110,64 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
     fun extractId(v: Any?): String = extractIdStatic(v)
     fun recordId(r: Map<String, Any?>): String = extractIdStatic(r["id"])
 
+    fun findUtcsRowsForRecord(record: Map<String, Any?>, table: ConfigTable): List<Map<String, Any?>> {
+        val recordKey = extractId(record["id"])
+        if (recordKey.isBlank()) return emptyList()
+        return when (table) {
+            ConfigTable.TIPOLOGIA -> {
+                allUtcs.filter {
+                    extractId(it["id_tipologia"]) == recordKey &&
+                            java.lang.String(it["id_utente"]?.toString() ?: "").trim() == currentUtente
+                }
+            }
+            ConfigTable.CATEGORIA -> {
+                val selectedTipoId = extractId(selectedTipo?.get("id"))
+                allUtcs.filter {
+                    extractId(it["id_categoria"]) == recordKey &&
+                            java.lang.String(it["id_utente"]?.toString() ?: "").trim() == currentUtente &&
+                            (selectedTipoId.isBlank() || extractId(it["id_tipologia"]) == selectedTipoId)
+                }
+            }
+            ConfigTable.SOTTOCATEGORIA -> {
+                val selectedTipoId = extractId(selectedTipo?.get("id"))
+                val selectedCatId = extractId(selectedCat?.get("id"))
+                allUtcs.filter {
+                    extractId(it["id_sottocategoria"]) == recordKey &&
+                            java.lang.String(it["id_utente"]?.toString() ?: "").trim() == currentUtente &&
+                            (selectedTipoId.isBlank() || extractId(it["id_tipologia"]) == selectedTipoId) &&
+                            (selectedCatId.isBlank() || extractId(it["id_categoria"]) == selectedCatId)
+                }
+            }
+            else -> emptyList()
+        }
+    }
+
+    fun findUcRowsForRecord(record: Map<String, Any?>): List<Map<String, Any?>> {
+        val recordKey = extractId(record["id"])
+        if (recordKey.isBlank()) return emptyList()
+        return allUc.filter {
+            extractId(it["id_conto"]) == recordKey &&
+                    java.lang.String(it["id_utente"]?.toString() ?: "").trim() == currentUtente
+        }
+    }
+
+    fun attachRelationActive(record: Map<String, Any?>, table: ConfigTable): Map<String, Any?> {
+        val relationRows = when (table) {
+            ConfigTable.TIPOLOGIA,
+            ConfigTable.CATEGORIA,
+            ConfigTable.SOTTOCATEGORIA -> findUtcsRowsForRecord(record, table)
+            ConfigTable.CONTO -> findUcRowsForRecord(record)
+            else -> emptyList()
+        }
+        if (relationRows.isEmpty()) return record
+
+        val relationActive = relationRows.any { row ->
+            row["attivo"] == true || row["attivo"]?.toString()?.lowercase() == "true"
+        }
+        val attivoKey = if (table == ConfigTable.CATEGORIA) "attiva" else "attivo"
+        return record + mapOf(attivoKey to relationActive)
+    }
+
     // ── Filtro drill-down via UTCS ────────────────────────────────────
     // derivedStateOf garantisce ricalcolo reattivo quando allUtcs/drillLevel cambiano
     val utcsFiltrati by remember {
@@ -121,9 +181,18 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
     val currentList by remember {
         derivedStateOf {
             when {
-                activeTab == ConfigTab.CONTI -> allConti
+                activeTab == ConfigTab.CONTI ->
+                    allConti.map { attachRelationActive(it, ConfigTable.CONTO) }
 
-                drillLevel == DrillLevel.TIPOLOGIA -> allTipologie
+                drillLevel == DrillLevel.TIPOLOGIA -> {
+                    val tipoIds = utcsFiltrati
+                        .map { extractId(it["id_tipologia"]) }
+                        .filter { it.isNotBlank() }
+                        .toSet()
+                    allTipologie
+                        .filter { extractId(it["id"]) in tipoIds }
+                        .map { attachRelationActive(it, ConfigTable.TIPOLOGIA) }
+                }
 
                 drillLevel == DrillLevel.CATEGORIA -> {
                     val tipoId = extractId(selectedTipo?.get("id"))
@@ -132,7 +201,9 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                         .map    { extractId(it["id_categoria"]) }
                         .filter { it.isNotBlank() }
                         .toSet()
-                    allCategorie.filter { extractId(it["id"]) in catIds }
+                    allCategorie
+                        .filter { extractId(it["id"]) in catIds }
+                        .map { attachRelationActive(it, ConfigTable.CATEGORIA) }
                 }
 
                 else -> {
@@ -146,7 +217,9 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                         .map    { extractId(it["id_sottocategoria"]) }
                         .filter { it.isNotBlank() }
                         .toSet()
-                    allSottocategorie.filter { extractId(it["id"]) in sottoIds }
+                    allSottocategorie
+                        .filter { extractId(it["id"]) in sottoIds }
+                        .map { attachRelationActive(it, ConfigTable.SOTTOCATEGORIA) }
                 }
             }
         }
@@ -179,6 +252,7 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
             else -> {}
         }
     }
+    BackHandler(enabled = isMutating) { /* blocca back durante mutazioni */ }
 
     // ── Snackbar ──────────────────────────────────────────────────────
     var snackMsg          by remember { mutableStateOf<String?>(null) }
@@ -187,71 +261,99 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
         snackMsg?.let { snackbarHostState.showSnackbar(it); snackMsg = null }
     }
 
-    // ── Popola cache da vmState (zero rete) ───────────────────────────
-    LaunchedEffect(vmState.didLoadLookups) {
-        if (vmState.didLoadLookups) {
-            if (allTipologie.isEmpty()) allTipologie = vmState.tipi.map { label ->
-                val p = label.split(" - ", limit = 2)
-                mapOf("id" to p.getOrNull(0), "descrizione" to p.getOrNull(1),
-                    "attivo" to true, "tipo_movimento" to "uscita")
+    errorMsg?.let { err ->
+        AlertDialog(
+            onDismissRequest = { errorMsg = null },
+            title = { Text("Operazione non riuscita") },
+            text = { Text(err) },
+            confirmButton = {
+                TextButton(onClick = { errorMsg = null }) { Text("OK") }
             }
-            if (allCategorie.isEmpty()) allCategorie = vmState.categorie.map { label ->
-                val p = label.split(" - ", limit = 2)
-                mapOf("id" to p.getOrNull(0), "descrizione" to p.getOrNull(1), "attiva" to true)
-            }
-            if (allConti.isEmpty()) allConti = vmState.conti.map { label ->
-                val p = label.split(" - ", limit = 2)
-                mapOf("id" to p.getOrNull(0), "id_conto" to label,
-                    "descrizione" to label, "attivo" to true)
-            }
-            // allSottocategorie NON viene popolato da vmState perché i record
-            // da vmState hanno id=null e rompono il filtro drill-down.
-        }
+        )
     }
 
-    // ── Carica da API ─────────────────────────────────────────────────
-    // UTCS viene sempre caricato (necessario per il drill-down).
-    // Il resto solo se la cache è vuota.
+    // ── Carica dati ───────────────────────────────────────────────────
+    // Tipi, categorie, sottocategorie: da Room (già sincronizzate da syncAllBatch,
+    // zero chiamate API). UTCs dall'API perché il loro id numerico non è in Room
+    // ed è necessario per le operazioni CRUD (cascade deactivate, ecc.).
+    // Conti e UC vengono caricati lazy nel LaunchedEffect(activeTab) → CONTI.
     fun loadAllData(forceRefresh: Boolean = false) {
         scope.launch {
-            isLoading = true; errorMsg = null
+            errorMsg = null
             try {
-                // Forza sempre il caricamento completo da API:
-                // vmState popola allTipologie/allCategorie ma non allUtcs/allSottocategorie
-                // (le sottocategorie da vmState hanno id=null e rompono il drill-down).
-                val needFull = forceRefresh || allUtcs.isEmpty()
+                val db = (context.applicationContext as MyApp).db
 
-                if (needFull) {
-                    // Carica tutte le tabelle in parallelo
-                    val catD   = async { api.getCategorie().data
-                        ?.map { mapOf("id" to it.id, "descrizione" to it.descrizione, "attiva" to it.attiva) }
-                        ?: emptyList<Map<String, Any?>>() }
-                    val contiD = async { api.getConti().data ?: emptyList() }
-                    val tipD   = async { api.getTipi().data ?: emptyList() }
-                    val sottD  = async { api.getSottocategorie().data ?: emptyList() }
-                    val ucD    = async { api.getUc(utente = currentUtente).data ?: emptyList() }
-                    val utcsD  = async { api.getUtcs().data ?: emptyList() }
-
-                    allCategorie      = catD.await()
-                    allConti          = contiD.await()
-                    allTipologie      = tipD.await()
-                    allSottocategorie = sottD.await()
-                    allUc             = ucD.await()
-                    allUtcs           = utcsD.await()
-                } else {
-                    // Cache tabelle già disponibile — ricarica solo UTCS
-                    allUtcs = api.getUtcs().data ?: emptyList()
+                val localTipologie = db.lookupDao().getTipiRaw().map { e ->
+                    val p = e.value.split(" - ", limit = 2)
+                    mapOf<String, Any?>(
+                        "id"             to p.getOrNull(0),
+                        "descrizione"    to p.getOrNull(1),
+                        "attivo"         to e.attivo,
+                        "tipo_movimento" to e.tipoMovimento
+                    )
                 }
-            } catch (e: Exception) { errorMsg = e.message }
-            finally { isLoading = false }
+                val localCategorie = db.lookupDao().getCategorieRaw().map { e ->
+                    val p = e.value.split(" - ", limit = 2)
+                    mapOf<String, Any?>(
+                        "id"          to p.getOrNull(0),
+                        "descrizione" to p.getOrNull(1),
+                        "attiva"      to e.attivo
+                    )
+                }
+                val localSottocategorie = db.lookupDao().getSottocategorieRaw().map { e ->
+                    mapOf<String, Any?>(
+                        "id"           to e.id,
+                        "id_categoria" to e.categoria,
+                        "descrizione"  to e.sottocategoria,
+                        "attivo"       to e.attivo
+                    )
+                }
+                val localUtcs = db.lookupDao().getUtcsByUtente(currentUtente).map { e ->
+                    mapOf<String, Any?>(
+                        "id" to e.key,
+                        "id_utente" to e.utente,
+                        "id_tipologia" to e.tipologia,
+                        "id_categoria" to e.categoria,
+                        "id_sottocategoria" to e.sottocategoria,
+                        "attivo" to e.attivo
+                    )
+                }
+                val localConti = db.lookupDao().getContiRaw(currentUtente).map { e ->
+                    val p = e.value.split(" - ", limit = 2)
+                    mapOf<String, Any?>(
+                        "id" to p.getOrNull(0),
+                        "descrizione" to p.getOrNull(1),
+                        "attivo" to e.attivo
+                    )
+                }
+
+                val hasLocal = localTipologie.isNotEmpty() || localCategorie.isNotEmpty() || localSottocategorie.isNotEmpty() || localUtcs.isNotEmpty() || localConti.isNotEmpty()
+                isLoading = !hasLocal
+
+                if (forceRefresh || allTipologie.isEmpty()) allTipologie = localTipologie
+                if (forceRefresh || allCategorie.isEmpty()) allCategorie = localCategorie
+                if (forceRefresh || allSottocategorie.isEmpty()) allSottocategorie = localSottocategorie
+                if (forceRefresh || allUtcs.isEmpty()) allUtcs = localUtcs
+                if (forceRefresh || allConti.isEmpty()) allConti = localConti
+
+                // Refresh remoto silenzioso: serve per avere gli id numerici reali utili ai CRUD.
+                allUtcs = api.getUtcs().data ?: allUtcs
+                allConti = api.getConti().data ?: allConti
+                allUc = api.getUc(utente = currentUtente).data ?: allUc
+            } catch (e: Exception) {
+                errorMsg = e.message
+            } finally {
+                isLoading = false
+            }
         }
     }
 
     // ── Refresh mirato con filtri drill-down ──────────────────────────
-    fun refreshCurrentLevel() {
-        scope.launch {
-            isRefreshing = true; errorMsg = null
-            try {
+    suspend fun refreshCurrentLevel(showTopLoading: Boolean = true) {
+        if (showTopLoading) isRefreshing = true
+        errorMsg = null
+        try {
+            coroutineScope {
                 // Ricarica sempre UTCS (fonte gerarchia) + la tabella corrente
                 val utcsD = async { api.getUtcs().data ?: emptyList() }
                 when {
@@ -269,55 +371,106 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                         allSottocategorie = api.getSottocategorie().data ?: emptyList()
                 }
                 allUtcs = utcsD.await()
-            } catch (e: Exception) { errorMsg = e.message }
-            finally { isRefreshing = false }
+            }
+        } catch (e: Exception) {
+            errorMsg = e.message
+        } finally {
+            if (showTopLoading) isRefreshing = false
         }
     }
 
     // ── Cascade deactivate ────────────────────────────────────────────
-    fun cascadeDeactivate(table: ConfigTable, recordId: Int) {
-        scope.launch {
-            try {
-                val idStr = recordId.toString()
-                val toDeactivateUtcs = when (table) {
-                    ConfigTable.TIPOLOGIA      -> allUtcs.filter { extractId(it["id_tipologia"])      == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
-                    ConfigTable.CATEGORIA      -> allUtcs.filter { extractId(it["id_categoria"])      == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
-                    ConfigTable.SOTTOCATEGORIA -> allUtcs.filter { extractId(it["id_sottocategoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
-                    else -> emptyList()
-                }
-                val toDeactivateSottocat = when (table) {
-                    ConfigTable.CATEGORIA -> allSottocategorie.filter { extractId(it["id_categoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
-                    else -> emptyList()
-                }
-                val toDeactivateUc = when (table) {
-                    ConfigTable.CONTO -> allUc.filter { extractId(it["id_conto"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
-                    else -> emptyList()
-                }
-                val totalCount = toDeactivateUtcs.size + toDeactivateSottocat.size + toDeactivateUc.size
-                if (totalCount == 0) return@launch
+    suspend fun cascadeDeactivate(table: ConfigTable, recordId: Int) {
+        try {
+            val idStr = recordId.toString()
+            val toDeactivateUtcs = when (table) {
+                ConfigTable.TIPOLOGIA      -> allUtcs.filter { extractId(it["id_tipologia"])      == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                ConfigTable.CATEGORIA      -> allUtcs.filter { extractId(it["id_categoria"])      == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                ConfigTable.SOTTOCATEGORIA -> allUtcs.filter { extractId(it["id_sottocategoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                else -> emptyList()
+            }
+            val toDeactivateSottocat = when (table) {
+                ConfigTable.CATEGORIA -> allSottocategorie.filter { extractId(it["id_categoria"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                else -> emptyList()
+            }
+            val toDeactivateUc = when (table) {
+                ConfigTable.CONTO -> allUc.filter { extractId(it["id_conto"]) == idStr && (it["attivo"] == true || it["attivo"]?.toString()?.lowercase() == "true") }
+                else -> emptyList()
+            }
+            val totalCount = toDeactivateUtcs.size + toDeactivateSottocat.size + toDeactivateUc.size
+            if (totalCount == 0) return
 
+            coroutineScope {
                 val jobs = mutableListOf<kotlinx.coroutines.Deferred<*>>()
                 toDeactivateUtcs.forEach { r ->
                     val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
-                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UTCS.resource, id = rid, data = mapOf("attivo" to false))) }
+                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UTCS.resource, id = rid, data = mapOf("attivo" to false).sanitizeForSheet())) }
                 }
                 toDeactivateSottocat.forEach { r ->
                     val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
-                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.SOTTOCATEGORIA.resource, id = rid, data = mapOf("attivo" to false))) }
+                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.SOTTOCATEGORIA.resource, id = rid, data = mapOf("attivo" to false).sanitizeForSheet())) }
                 }
                 toDeactivateUc.forEach { r ->
                     val rid = (r["id"] as? Double)?.toInt() ?: r["id"].toString().toIntOrNull() ?: return@forEach
-                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UC.resource, id = rid, data = mapOf("attivo" to false))) }
+                    jobs += async { api.updateRecord(GenericUpdateRequest(resource = ConfigTable.UC.resource, id = rid, data = mapOf("attivo" to false).sanitizeForSheet())) }
                 }
                 jobs.awaitAll()
-                snackMsg = "$totalCount ${if (totalCount == 1) "voce correlata disattivata" else "voci correlate disattivate"}"
-                loadAllData(forceRefresh = true)
-            } catch (e: Exception) { errorMsg = e.message }
+            }
+            snackMsg = "$totalCount ${if (totalCount == 1) "voce correlata disattivata" else "voci correlate disattivate"}"
+            refreshCurrentLevel(showTopLoading = false)
+        } catch (e: Exception) {
+            errorMsg = e.message
         }
     }
 
-    // Carica all'avvio (UTCS sempre, resto se cache vuota)
+    // Carica all'avvio: tipi/categorie/sotto da Room, UTCs dall'API
     LaunchedEffect(Unit) { loadAllData() }
+
+    fun addOptimisticRecord(table: ConfigTable, newId: String, data: Map<String, Any?>) {
+        val optimisticRecord = when (table) {
+            ConfigTable.TIPOLOGIA -> mapOf(
+                "id" to newId,
+                "descrizione" to (data["descrizione"]?.toString() ?: ""),
+                "tipo_movimento" to (data["tipo_movimento"]?.toString() ?: "uscita"),
+                "attivo" to true
+            )
+            ConfigTable.CATEGORIA -> mapOf(
+                "id" to newId,
+                "descrizione" to (data["descrizione"]?.toString() ?: ""),
+                "attiva" to true
+            )
+            ConfigTable.SOTTOCATEGORIA -> mapOf(
+                "id" to newId,
+                "id_categoria" to (data["id_categoria"]?.toString() ?: selectedCat?.get("id")?.toString().orEmpty()),
+                "descrizione" to (data["descrizione"]?.toString() ?: ""),
+                "attivo" to true
+            )
+            ConfigTable.CONTO -> mapOf(
+                "id" to newId,
+                "descrizione" to (data["descrizione"]?.toString() ?: ""),
+                "attivo" to true
+            )
+            else -> emptyMap()
+        }
+        when (table) {
+            ConfigTable.TIPOLOGIA -> allTipologie = (allTipologie + optimisticRecord).distinctBy { recordId(it) }
+            ConfigTable.CATEGORIA -> allCategorie = (allCategorie + optimisticRecord).distinctBy { recordId(it) }
+            ConfigTable.SOTTOCATEGORIA -> allSottocategorie = (allSottocategorie + optimisticRecord).distinctBy { recordId(it) }
+            ConfigTable.CONTO -> allConti = (allConti + optimisticRecord).distinctBy { recordId(it) }
+            else -> Unit
+        }
+    }
+
+    suspend fun resolveInsertedTipologiaId(descrizione: String, tipoMovimento: String): String? {
+        val remote = api.getTipi().data ?: return null
+        val match = remote
+            .filter {
+                (it["descrizione"]?.toString()?.trim().orEmpty() == descrizione.trim()) &&
+                        (it["tipo_movimento"]?.toString()?.trim().orEmpty() == tipoMovimento.trim())
+            }
+            .maxByOrNull { extractId(it["id"]).toIntOrNull() ?: Int.MIN_VALUE }
+        return match?.let { extractId(it["id"]) }?.takeIf { it.isNotBlank() }
+    }
 
     // ── Dialog Aggiungi / Modifica ────────────────────────────────────
     if (showAddDialog || showEditDialog) {
@@ -334,8 +487,17 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
             onDismiss         = { showAddDialog = false; showEditDialog = false },
             onSave            = { data ->
                 scope.launch {
+                    val editingRecordId = selectedRecord?.let(::recordId)
+                    val isEditing = showEditDialog && selectedRecord != null
+                    var targetLoadingRecordId: String? = editingRecordId
+                    isMutating = true
+                    if (isEditing && !editingRecordId.isNullOrBlank()) {
+                        loadingRecordId = editingRecordId
+                    }
+                    showAddDialog = false
+                    showEditDialog = false
                     try {
-                        if (showEditDialog && selectedRecord != null) {
+                        if (isEditing && selectedRecord != null) {
                             // ── MODIFICA: solo campi sicuri ───────────
                             val id = (selectedRecord!!["id"] as? Double)?.toInt()
                                 ?: selectedRecord!!["id"].toString().toIntOrNull() ?: return@launch
@@ -343,7 +505,7 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                                 GenericUpdateRequest(
                                     resource = dialogTable.resource,
                                     id       = id,
-                                    data     = data.safePayload().stripFormulaFields()
+                                    data     = data.sanitizeForSheet()
                                 )
                             )
                             snackMsg = "Record aggiornato in ${dialogTable.label}"
@@ -352,21 +514,53 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                             val insertResp = api.insertRecord(
                                 GenericInsertRequest(
                                     resource = dialogTable.resource,
-                                    data     = data.safePayload().stripFormulaFields()
+                                    data     = data.sanitizeForSheet()
                                 )
                             )
 
                             // Recupera l'id del record appena creato
-                            val newId = insertResp.data
+                            var newId = insertResp.data
                                 ?.let { it["id"] ?: it["insertedId"] }
                                 ?.let { v -> (v as? Double)?.toInt()?.toString() ?: v.toString() }
+
+                            if (dialogTable == ConfigTable.TIPOLOGIA && newId.isNullOrBlank()) {
+                                newId = resolveInsertedTipologiaId(
+                                    descrizione = data["descrizione"]?.toString().orEmpty(),
+                                    tipoMovimento = data["tipo_movimento"]?.toString().orEmpty()
+                                )
+                            }
 
                             // ── Auto-associazione in base al tipo di record creato ──
                             // Gli id in UTCS devono essere solo numerici (es. "1", "4")
                             // non nel formato completo "1 - Debiti".
                             // extractId() garantisce che prendiamo solo la parte numerica.
 
+                            if (!newId.isNullOrBlank()) {
+                                addOptimisticRecord(dialogTable, newId, data)
+                                loadingRecordId = newId
+                                targetLoadingRecordId = newId
+                            }
+
                             when (dialogTable) {
+
+                                ConfigTable.TIPOLOGIA -> {
+                                    if (newId != null) {
+                                        val tipoLabel = "${newId} - ${data["descrizione"]?.toString() ?: ""}"
+                                        val newUtcsRow = api.insertRecord(
+                                            GenericInsertRequest(
+                                                resource = ConfigTable.UTCS.resource,
+                                                data     = mapOf(
+                                                    "id_utente"         to currentUtente,
+                                                    "id_tipologia"      to tipoLabel,
+                                                    "id_categoria"      to "",
+                                                    "id_sottocategoria" to "",
+                                                    "attivo"            to true
+                                                ).sanitizeForSheet()
+                                            )
+                                        ).data ?: emptyMap()
+                                        allUtcs = allUtcs + newUtcsRow
+                                    }
+                                }
 
                                 // Nuova Categoria → UTCS placeholder (sottocategoria vuota)
                                 // così la categoria è subito visibile nel drill-down.
@@ -385,7 +579,7 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                                         "$newId - $desc"
                                     } else ""
                                     if (tipoLabel.isNotBlank() && catLabel.isNotBlank()) {
-                                        api.insertRecord(
+                                        val newUtcsRow = api.insertRecord(
                                             GenericInsertRequest(
                                                 resource = ConfigTable.UTCS.resource,
                                                 data     = mapOf(
@@ -394,9 +588,10 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                                                     "id_categoria"      to catLabel,
                                                     "id_sottocategoria" to "",
                                                     "attivo"            to true
-                                                )
+                                                ).sanitizeForSheet()
                                             )
-                                        )
+                                        ).data ?: emptyMap()
+                                        allUtcs = allUtcs + newUtcsRow
                                     }
                                 }
 
@@ -437,12 +632,12 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                                                     data     = mapOf(
                                                         "id_sottocategoria" to sottoLabel,
                                                         "attivo"            to true
-                                                    )
+                                                    ).sanitizeForSheet()
                                                 )
                                             )
                                         } else {
                                             // Nessun placeholder → insert diretto
-                                            api.insertRecord(
+                                            val newUtcsRow = api.insertRecord(
                                                 GenericInsertRequest(
                                                     resource = ConfigTable.UTCS.resource,
                                                     data     = mapOf(
@@ -451,9 +646,10 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                                                         "id_categoria"      to catLabel,
                                                         "id_sottocategoria" to sottoLabel,
                                                         "attivo"            to true
-                                                    )
+                                                    ).sanitizeForSheet()
                                                 )
-                                            )
+                                            ).data ?: emptyMap()
+                                            allUtcs = allUtcs + newUtcsRow
                                         }
                                     }
                                 }
@@ -461,16 +657,17 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                                 // Nuovo Conto → UC automatico
                                 ConfigTable.CONTO -> {
                                     if (newId != null) {
-                                        api.insertRecord(
+                                        val newUcRow = api.insertRecord(
                                             GenericInsertRequest(
                                                 resource = ConfigTable.UC.resource,
                                                 data     = mapOf(
                                                     "id_utente" to currentUtente,
                                                     "id_conto"  to newId,
                                                     "attivo"    to true
-                                                )
+                                                ).sanitizeForSheet()
                                             )
-                                        )
+                                        ).data ?: emptyMap()
+                                        allUc = allUc + newUcRow
                                     }
                                 }
 
@@ -479,9 +676,18 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
 
                             snackMsg = "Aggiunto in ${dialogTable.label}"
                         }
-                        showAddDialog = false; showEditDialog = false
-                        refreshCurrentLevel()
-                    } catch (e: Exception) { errorMsg = e.message }
+                        if (isEditing && !editingRecordId.isNullOrBlank()) {
+                            loadingRecordId = editingRecordId
+                        }
+                        refreshCurrentLevel(showTopLoading = false)
+                    } catch (e: Exception) {
+                        errorMsg = e.message
+                    } finally {
+                        if (loadingRecordId == targetLoadingRecordId) {
+                            loadingRecordId = null
+                        }
+                        isMutating = false
+                    }
                 }
             }
         )
@@ -495,20 +701,43 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
             text  = { Text("Confermi l'eliminazione? L'operazione è definitiva.") },
             confirmButton = {
                 TextButton(onClick = {
-                    val id = (selectedRecord!!["id"] as? Double)?.toInt()
-                        ?: selectedRecord!!["id"].toString().toIntOrNull()
-                    if (id != null) {
-                        loadingRecordId = id.toString()
+                    val record = selectedRecord ?: return@TextButton
+                    val thisId = recordId(record)
+                    showDeleteConfirm = false
+                    if (thisId.isNotBlank()) {
+                        loadingRecordId = thisId
+                        isMutating = true
                         scope.launch {
                             try {
-                                api.deleteRecord(GenericDeleteRequest(resource = dialogTable.resource, id = id))
-                                snackMsg = "Record eliminato"
-                                showDeleteConfirm = false
-                                refreshCurrentLevel()
+                                when (dialogTable) {
+                                    ConfigTable.TIPOLOGIA,
+                                    ConfigTable.CATEGORIA,
+                                    ConfigTable.SOTTOCATEGORIA -> {
+                                        val rowsToDelete = findUtcsRowsForRecord(record, dialogTable)
+                                        rowsToDelete.forEach { utcsRow ->
+                                            val utcsId = (utcsRow["id"] as? Double)?.toInt()
+                                                ?: utcsRow["id"].toString().toIntOrNull()
+                                                ?: return@forEach
+                                            api.deleteRecord(GenericDeleteRequest(resource = ConfigTable.UTCS.resource, id = utcsId))
+                                        }
+                                        snackMsg = if (rowsToDelete.isEmpty()) "Nessuna riga UTCS da eliminare" else "Relazione UTCS eliminata"
+                                    }
+                                    ConfigTable.CONTO -> {
+                                        val rowsToDelete = findUcRowsForRecord(record)
+                                        rowsToDelete.forEach { ucRow ->
+                                            val ucId = (ucRow["id"] as? Double)?.toInt()
+                                                ?: ucRow["id"].toString().toIntOrNull()
+                                                ?: return@forEach
+                                            api.deleteRecord(GenericDeleteRequest(resource = ConfigTable.UC.resource, id = ucId))
+                                        }
+                                        snackMsg = if (rowsToDelete.isEmpty()) "Nessuna riga UC da eliminare" else "Relazione conto eliminata"
+                                    }
+                                    else -> Unit
+                                }
+                                refreshCurrentLevel(showTopLoading = false)
                             } catch (e: Exception) {
                                 errorMsg = e.message
-                                showDeleteConfirm = false
-                            } finally { loadingRecordId = null }
+                            } finally { loadingRecordId = null; isMutating = false }
                         }
                     }
                 }) { Text("Elimina", color = MaterialTheme.colorScheme.error) }
@@ -531,6 +760,7 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                 },
                 navigationIcon = {
                     IconButton(onClick = {
+                        if (isMutating) return@IconButton
                         if (canGoBack) {
                             when (drillLevel) {
                                 DrillLevel.SOTTOCATEGORIA -> { drillLevel = DrillLevel.CATEGORIA;  selectedCat  = null }
@@ -538,14 +768,14 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                                 else -> {}
                             }
                         } else onBack()
-                    }) {
+                    }, enabled = !isMutating) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro")
                     }
                 },
                 actions = {
                     IconButton(
-                        onClick = { refreshCurrentLevel() },
-                        enabled = !isRefreshing && !isLoading
+                        onClick = { if (!isMutating) scope.launch { refreshCurrentLevel() } },
+                        enabled = !isRefreshing && !isLoading && !isMutating
                     ) {
                         if (isRefreshing) {
                             CircularProgressIndicator(
@@ -564,10 +794,12 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
         floatingActionButton = {
             FloatingActionButton(
                 onClick        = {
+                    if (isMutating) return@FloatingActionButton
                     dialogTable   = currentTable
                     showAddDialog = true
                 },
-                containerColor = Brand
+                containerColor = Brand,
+                modifier = Modifier
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Aggiungi", tint = Color.White)
             }
@@ -577,16 +809,19 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                 NavigationBarItem(
                     selected = activeTab == ConfigTab.UTCS,
                     onClick  = {
+                        if (isMutating) return@NavigationBarItem
                         activeTab    = ConfigTab.UTCS
                         drillLevel   = DrillLevel.TIPOLOGIA
                         selectedTipo = null; selectedCat = null
                     },
+                    enabled = !isMutating,
                     icon  = {},
                     label = { Text("UTCS") }
                 )
                 NavigationBarItem(
                     selected = activeTab == ConfigTab.CONTI,
-                    onClick  = { activeTab = ConfigTab.CONTI },
+                    onClick  = { if (!isMutating) activeTab = ConfigTab.CONTI },
+                    enabled = !isMutating,
                     icon  = {},
                     label = { Text("Conti") }
                 )
@@ -640,37 +875,94 @@ fun ConfigScreen(vm: SpeseViewModel, onBack: () -> Unit) {
                             }
                         },
                         onEdit   = {
-                            dialogTable    = currentTable
-                            selectedRecord = record
-                            showEditDialog = true
+                            if (!isMutating) {
+                                dialogTable    = currentTable
+                                selectedRecord = record
+                                showEditDialog = true
+                            }
                         },
                         onDelete = {
-                            dialogTable    = currentTable
-                            selectedRecord = record
-                            showDeleteConfirm = true
+                            if (!isMutating) {
+                                dialogTable    = currentTable
+                                selectedRecord = record
+                                showDeleteConfirm = true
+                            }
                         },
                         onToggleAttivo = { newVal ->
-                            loadingRecordId = thisId
-                            scope.launch {
-                                try {
-                                    val id = (record["id"] as? Double)?.toInt()
-                                        ?: record["id"].toString().toIntOrNull() ?: return@launch
-                                    // Invia SOLO il campo attivo — nessun altro campo
-                                    val attivoKey = if (currentTable == ConfigTable.CATEGORIA) "attiva" else "attivo"
-                                    api.updateRecord(
-                                        GenericUpdateRequest(
-                                            resource = currentTable.resource,
-                                            id       = id,
-                                            data     = mapOf(attivoKey to newVal)
-                                        )
-                                    )
-                                    if (!newVal) cascadeDeactivate(currentTable, id)
-                                    else refreshCurrentLevel()
-                                } catch (e: Exception) { errorMsg = e.message }
-                                finally { loadingRecordId = null }
+                            if (!isMutating) {
+                                loadingRecordId = thisId
+                                isMutating = true
+                                scope.launch {
+                                    try {
+                                        when (currentTable) {
+                                            ConfigTable.TIPOLOGIA,
+                                            ConfigTable.CATEGORIA,
+                                            ConfigTable.SOTTOCATEGORIA -> {
+                                                val rowsToUpdate = findUtcsRowsForRecord(record, currentTable)
+                                                rowsToUpdate.forEach { utcsRow ->
+                                                    val utcsId = (utcsRow["id"] as? Double)?.toInt()
+                                                        ?: utcsRow["id"].toString().toIntOrNull()
+                                                        ?: return@forEach
+                                                    api.updateRecord(
+                                                        GenericUpdateRequest(
+                                                            resource = ConfigTable.UTCS.resource,
+                                                            id       = utcsId,
+                                                            data     = mapOf("attivo" to newVal).sanitizeForSheet()
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                            ConfigTable.CONTO -> {
+                                                val rowsToUpdate = findUcRowsForRecord(record)
+                                                rowsToUpdate.forEach { ucRow ->
+                                                    val ucId = (ucRow["id"] as? Double)?.toInt()
+                                                        ?: ucRow["id"].toString().toIntOrNull()
+                                                        ?: return@forEach
+                                                    api.updateRecord(
+                                                        GenericUpdateRequest(
+                                                            resource = ConfigTable.UC.resource,
+                                                            id       = ucId,
+                                                            data     = mapOf("attivo" to newVal).sanitizeForSheet()
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                            else -> Unit
+                                        }
+                                        refreshCurrentLevel(showTopLoading = false)
+                                    } catch (e: Exception) { errorMsg = e.message }
+                                    finally { loadingRecordId = null; isMutating = false }
+
+                                }
                             }
                         }
                     )
+                }
+            }
+        }
+    }
+
+
+
+    if (isMutating) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(0.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.35f),
+                modifier = Modifier.fillMaxSize()
+            ) {}
+            Card {
+                Row(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Text("Aggiornamento in corso…")
                 }
             }
         }
@@ -819,6 +1111,16 @@ private fun ConfigRecordDialog(
     var contoExpanded    by remember { mutableStateOf(false) }
     var tipoExpanded     by remember { mutableStateOf(false) }
     var sottoExpanded    by remember { mutableStateOf(false) }
+    var attemptedSubmit  by remember { mutableStateOf(false) }
+
+    val descrizioneRequired = table == ConfigTable.TIPOLOGIA ||
+            table == ConfigTable.CATEGORIA ||
+            table == ConfigTable.SOTTOCATEGORIA ||
+            table == ConfigTable.CONTO
+    val categoriaRequired = table == ConfigTable.SOTTOCATEGORIA && preselectedCatId == null
+    val descrizioneError = attemptedSubmit && descrizioneRequired && descrizione.isBlank()
+    val categoriaError = attemptedSubmit && categoriaRequired && idCategoria.isBlank()
+    val hasValidationErrors = descrizioneError || categoriaError
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -829,7 +1131,10 @@ private fun ConfigRecordDialog(
 
                     ConfigTable.TIPOLOGIA -> {
                         OutlinedTextField(value = descrizione, onValueChange = { descrizione = it },
-                            label = { Text("Descrizione") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            label = { Text("Descrizione *") },
+                            isError = descrizioneError,
+                            supportingText = { if (descrizioneError) Text("Campo obbligatorio") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
                         ExposedDropdownMenuBox(expanded = tipoMovExpanded, onExpandedChange = { tipoMovExpanded = !tipoMovExpanded }) {
                             OutlinedTextField(value = tipoMovimento, onValueChange = {}, readOnly = true,
                                 label = { Text("Tipo movimento") },
@@ -846,7 +1151,10 @@ private fun ConfigRecordDialog(
 
                     ConfigTable.CATEGORIA -> {
                         OutlinedTextField(value = descrizione, onValueChange = { descrizione = it },
-                            label = { Text("Descrizione") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            label = { Text("Descrizione *") },
+                            isError = descrizioneError,
+                            supportingText = { if (descrizioneError) Text("Campo obbligatorio") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
 
                     ConfigTable.SOTTOCATEGORIA -> {
@@ -872,6 +1180,8 @@ private fun ConfigRecordDialog(
                             ExposedDropdownMenuBox(expanded = catExpanded, onExpandedChange = { catExpanded = !catExpanded }) {
                                 OutlinedTextField(value = idCategoria.ifBlank { "Seleziona categoria…" },
                                     onValueChange = {}, readOnly = true, label = { Text("Categoria") },
+                                    isError = categoriaError,
+                                    supportingText = { if (categoriaError) Text("Campo obbligatorio") },
                                     modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(catExpanded) })
                                 ExposedDropdownMenu(expanded = catExpanded, onDismissRequest = { catExpanded = false }) {
@@ -884,12 +1194,18 @@ private fun ConfigRecordDialog(
                             }
                         }
                         OutlinedTextField(value = descrizione, onValueChange = { descrizione = it },
-                            label = { Text("Descrizione") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            label = { Text("Descrizione *") },
+                            isError = descrizioneError,
+                            supportingText = { if (descrizioneError) Text("Campo obbligatorio") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
 
                     ConfigTable.CONTO -> {
                         OutlinedTextField(value = descrizione, onValueChange = { descrizione = it },
-                            label = { Text("Descrizione") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            label = { Text("Descrizione *") },
+                            isError = descrizioneError,
+                            supportingText = { if (descrizioneError) Text("Campo obbligatorio") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
 
                     ConfigTable.UC -> {
@@ -958,6 +1274,8 @@ private fun ConfigRecordDialog(
         },
         confirmButton = {
             TextButton(onClick = {
+                attemptedSubmit = true
+                if (hasValidationErrors) return@TextButton
                 // Payload pulito — solo i campi editabili della tabella
                 val payload: Map<String, Any?> = when (table) {
                     ConfigTable.TIPOLOGIA      -> mapOf(

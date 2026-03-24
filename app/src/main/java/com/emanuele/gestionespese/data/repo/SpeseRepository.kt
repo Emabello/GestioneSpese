@@ -10,11 +10,12 @@
  * Le letture avvengono sempre da Room; la sincronizzazione con il backend
  * viene avviata esplicitamente da [SpeseViewModel.syncAll].
  *
- * In fondo al file si trovano i mapper privati tra [SpesaView] ↔ [SpesaEntity].
+ * In fondo al file si trovano:
+ * - Mapper privati tra [SpesaView] ↔ [SpesaEntity]
+ * - Parser privati condivisi tra [syncAllBatch] e [refreshLookupsFromRemoteAndSave]
  */
 package com.emanuele.gestionespese.data.repo
 
-import android.util.Log
 import com.emanuele.gestionespese.data.local.LookupDao
 import com.emanuele.gestionespese.data.local.SpesaDao
 import com.emanuele.gestionespese.data.local.entities.*
@@ -22,8 +23,6 @@ import com.emanuele.gestionespese.data.local.sottoKey
 import com.emanuele.gestionespese.data.local.utcKey
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.data.remote.SupabaseApi
-import kotlinx.coroutines.async
-import kotlinx.coroutines.supervisorScope
 import java.io.IOException
 
 /**
@@ -96,83 +95,22 @@ class SpeseRepository(
             syncAll(utente)
             return
         }
-        Log.d("SYNC_DEBUG", "conti raw=${data.conti?.size}")
-        Log.d("SYNC_DEBUG", "utcs raw=${data.utcs?.size}")
-        Log.d("SYNC_DEBUG", "primi conti=${data.conti?.take(3)}")
-        Log.d("SYNC_DEBUG", "primi utcs=${data.utcs?.take(3)}")
-
         // ── Parse tipologie ───────────────────────────────────────────────
         val tipiRawList = data.tipologie ?: emptyList()
-        val tipiList = tipiRawList.mapNotNull { m ->
-            val label = buildLabel(
-                m.firstNonBlank("id")?.numToCleanString(),
-                m.firstNonBlank("descrizione", "nome", "label")
-            ) ?: return@mapNotNull null
-            TipoEntity(
-                value         = label,
-                attivo        = m.isActiveDefaultTrue(),
-                tipoMovimento = m.firstNonBlank("tipo_movimento", "TIPO_MOVIMENTO") ?: "uscita"
-            )
-        }.distinct().sortedBy { it.value }
+        val tipiList    = tipiRawList.toTipiEntitiesFull()
 
         // ── Parse categorie ───────────────────────────────────────────────
-        val categorieList = (data.categorie ?: emptyList()).mapNotNull { m ->
-            var label = buildLabel(
-                m.firstNonBlank("id")?.numToCleanString(),
-                m.firstNonBlank("descrizione", "nome", "label")
-            ) ?: return@mapNotNull null
-            CategoriaEntity(value = label, attivo = m.isActiveDefaultTrue())
-        }.distinct().sortedBy { it.value }
+        val categorieList = (data.categorie ?: emptyList()).toCategorieEntities()
 
         // ── Parse sottocategorie ──────────────────────────────────────────
-        val sottoList = (data.sottocategorie ?: emptyList()).mapNotNull { m ->
-            val catId = m.firstNonBlank("id_categoria", "categoria", "idCategoria")?.numToCleanString()
-            val sub   = m.firstNonBlank("descrizione", "sottocategoria", "nome", "label")
-            if (catId.isNullOrBlank() || sub.isNullOrBlank()) return@mapNotNull null
-            SottoCategoriaEntity(
-                key            = sottoKey(catId.trim(), sub.trim()),
-                id             = m.firstNonBlank("id")?.numToCleanString()?.toIntOrNull() ?: 0, // ← aggiunto
-                categoria      = catId.trim(),
-                sottocategoria = sub.trim(),
-                attivo         = m.isActiveDefaultTrue()
-            )
-        }.distinctBy { it.key }
+        val sottoList = (data.sottocategorie ?: emptyList()).toSottocategorieEntities()
 
         // ── Parse conti ───────────────────────────────────────────────────
-        val contiList = (data.conti ?: emptyList()).mapNotNull { m ->
-            val label = m.firstNonBlank("id_conto", "ID_CONTO", "id_definizione_attivo")?.trim() ?: return@mapNotNull null
-            ContoEntity(
-                value    = label,
-                utenteId = utente,
-                attivo   = m.isActiveDefaultTrue()
-            )
-        }.distinct()
+        val contiList = (data.conti ?: emptyList()).toContiEntities(utente)
 
-        //── Parse UTCs ────────────────────────────────────────────────────
-        val tipologiaTipoMap: Map<String, String> = tipiRawList.associate { m ->
-            val label = buildLabel(
-                m.firstNonBlank("id")?.numToCleanString(),
-                m.firstNonBlank("descrizione", "nome", "label")
-            ) ?: ""
-            label to (m.firstNonBlank("tipo_movimento", "TIPO_MOVIMENTO") ?: "uscita")
-        }
-        val utcEntities = (data.utcs ?: emptyList()).mapNotNull { m ->
-            val ut  = m.firstNonBlank("id_utente", "utenza", "ID_UTENTE")?.trim()
-            val tip = m.firstNonBlank("id_tipologia", "tipologia", "ID_TIPOLOGIA")?.trim()
-            val cat = m.firstNonBlank("id_categoria", "categoria", "ID_CATEGORIA")?.trim()
-            val sub = m.firstNonBlank("id_sottocategoria", "sottocategoria", "ID_SOTTOCATEGORIA")?.trim()
-            if (ut.isNullOrBlank() || tip.isNullOrBlank() ||
-                cat.isNullOrBlank() || sub.isNullOrBlank()) return@mapNotNull null
-            UtcEntity(
-                key            = utcKey(ut, tip, cat, sub),
-                utente         = ut,
-                tipologia      = tip,
-                categoria      = cat,
-                sottocategoria = sub,
-                attivo         = (m["attivo"] ?: m["ATTIVO"]).asBoolDefaultTrue(),
-                tipoMovimento  = tipologiaTipoMap[tip] ?: "uscita"
-            )
-        }
+        // ── Parse UTCs ────────────────────────────────────────────────────
+        val tipologiaTipoMap = buildTipologiaTipoMap(tipiRawList)
+        val utcEntities      = (data.utcs ?: emptyList()).toUtcEntities(tipologiaTipoMap)
 
         if (tipiList.isEmpty() && categorieList.isEmpty() && contiList.isEmpty()) {
             // Risposta batch vuota → fallback
@@ -377,10 +315,12 @@ class SpeseRepository(
     }
 
     /**
-     * Scarica tutte le lookup dal backend in parallelo e aggiorna il DB locale.
-     * Le 5 chiamate API (tipi+tipiRaw unificate, categorie, sottocategorie, conti, UTC)
-     * vengono lanciate in parallelo con [supervisorScope] + [async]: il fallimento di
-     * una chiamata non cancella le altre. Se tutte falliscono viene lanciata [IOException].
+     * Scarica tutte le lookup dal backend in modo sequenziale e aggiorna il DB locale.
+     * Le 5 chiamate API (tipi, categorie, sottocategorie, conti, UTC) vengono eseguite
+     * in sequenza per rispettare i rate limit di Google Apps Script.
+     * Se tutte falliscono viene lanciata [IOException].
+     *
+     * Usato come fallback di [syncAllBatch] quando il backend non supporta `sync_all`.
      *
      * @param utenteId ID dell'utente per filtrare i conti.
      */
@@ -417,36 +357,107 @@ class SpeseRepository(
         lookupDao.clearSottocategorie()
         lookupDao.upsertSottocategorie(sottoList)
 
-        val tipologiaTipoMap: Map<String, String> = tipiRawList.associate { m ->
-            val label = buildLabel(
-                m.firstNonBlank("id")?.numToCleanString(),
-                m.firstNonBlank("descrizione", "nome", "label")
-            ) ?: ""
-            label to (m.firstNonBlank("tipo_movimento", "TIPO_MOVIMENTO") ?: "uscita")
-        }
-
-        val utcEntities = utcRowsList.mapNotNull { m ->
-            val utente         = m.firstNonBlank("id_utente", "utenza", "ID_UTENTE")?.trim()
-            val tipologia      = m.firstNonBlank("id_tipologia", "tipologia", "ID_TIPOLOGIA")?.trim()
-            val categoria      = m.firstNonBlank("id_categoria", "categoria", "ID_CATEGORIA")?.trim()
-            val sottocategoria = m.firstNonBlank("id_sottocategoria", "sottocategoria", "ID_SOTTOCATEGORIA")?.trim()
-            if (utente.isNullOrBlank() || tipologia.isNullOrBlank() ||
-                categoria.isNullOrBlank() || sottocategoria.isNullOrBlank()) return@mapNotNull null
-
-            UtcEntity(
-                key            = utcKey(utente, tipologia, categoria, sottocategoria),
-                utente         = utente,
-                tipologia      = tipologia,
-                categoria      = categoria,
-                sottocategoria = sottocategoria,
-                attivo         = (m["attivo"] ?: m["ATTIVO"]).asBoolDefaultTrue(),
-                tipoMovimento  = tipologiaTipoMap[tipologia] ?: "uscita"
-            )
-        }
+        val tipologiaTipoMap = buildTipologiaTipoMap(tipiRawList)
+        val utcEntities      = utcRowsList.toUtcEntities(tipologiaTipoMap)
 
         lookupDao.clearUtcs()
         lookupDao.upsertUtcs(utcEntities)
     }
+}
+
+// ── Parser privati condivisi ──────────────────────────────────────────────────
+// Usati sia in syncAllBatch che in refreshLookupsFromRemoteAndSave per evitare duplicazioni.
+
+/**
+ * Costruisce la mappa tipologia-label → tipoMovimento dai raw rows delle tipologie.
+ * Usata come lookup durante il parsing degli UTC.
+ */
+private fun buildTipologiaTipoMap(tipiRawList: List<Map<String, Any?>>): Map<String, String> =
+    tipiRawList.associate { m ->
+        val label = buildLabel(
+            m.firstNonBlank("id")?.numToCleanString(),
+            m.firstNonBlank("descrizione", "nome", "label")
+        ) ?: ""
+        label to (m.firstNonBlank("tipo_movimento", "TIPO_MOVIMENTO") ?: "uscita")
+    }
+
+/**
+ * Converte raw rows di tipologie in [TipoEntity] complete (con attivo e tipoMovimento).
+ * Usata da [SpeseRepository.syncAllBatch] dove i dati raw sono disponibili.
+ */
+private fun List<Map<String, Any?>>.toTipiEntitiesFull(): List<TipoEntity> =
+    mapNotNull { m ->
+        val label = buildLabel(
+            m.firstNonBlank("id")?.numToCleanString(),
+            m.firstNonBlank("descrizione", "nome", "label")
+        ) ?: return@mapNotNull null
+        TipoEntity(
+            value         = label,
+            attivo        = m.isActiveDefaultTrue(),
+            tipoMovimento = m.firstNonBlank("tipo_movimento", "TIPO_MOVIMENTO") ?: "uscita"
+        )
+    }.distinct().sortedBy { it.value }
+
+/**
+ * Converte raw rows di categorie in [CategoriaEntity].
+ */
+private fun List<Map<String, Any?>>.toCategorieEntities(): List<CategoriaEntity> =
+    mapNotNull { m ->
+        val label = buildLabel(
+            m.firstNonBlank("id")?.numToCleanString(),
+            m.firstNonBlank("descrizione", "nome", "label")
+        ) ?: return@mapNotNull null
+        CategoriaEntity(value = label, attivo = m.isActiveDefaultTrue())
+    }.distinct().sortedBy { it.value }
+
+/**
+ * Converte raw rows di sottocategorie in [SottoCategoriaEntity].
+ */
+private fun List<Map<String, Any?>>.toSottocategorieEntities(): List<SottoCategoriaEntity> =
+    mapNotNull { m ->
+        val catId = m.firstNonBlank("id_categoria", "categoria", "idCategoria")?.numToCleanString()
+        val sub   = m.firstNonBlank("descrizione", "sottocategoria", "nome", "label")
+        if (catId.isNullOrBlank() || sub.isNullOrBlank()) return@mapNotNull null
+        SottoCategoriaEntity(
+            key            = sottoKey(catId.trim(), sub.trim()),
+            id             = m.firstNonBlank("id")?.numToCleanString()?.toIntOrNull() ?: 0,
+            categoria      = catId.trim(),
+            sottocategoria = sub.trim(),
+            attivo         = m.isActiveDefaultTrue()
+        )
+    }.distinctBy { it.key }
+
+/**
+ * Converte raw rows di conti in [ContoEntity] per l'utente indicato.
+ */
+private fun List<Map<String, Any?>>.toContiEntities(utenteId: String): List<ContoEntity> =
+    mapNotNull { m ->
+        val label = m.firstNonBlank("id_conto", "ID_CONTO", "id_definizione_attivo")?.trim()
+            ?: return@mapNotNull null
+        ContoEntity(value = label, utenteId = utenteId, attivo = m.isActiveDefaultTrue())
+    }.distinct()
+
+/**
+ * Converte raw rows UTC in [UtcEntity], usando [tipologiaTipoMap] per derivare tipoMovimento.
+ */
+private fun List<Map<String, Any?>>.toUtcEntities(
+    tipologiaTipoMap: Map<String, String>
+): List<UtcEntity> = mapNotNull { m ->
+    val ut  = m.firstNonBlank("id_utente",        "utenza",         "ID_UTENTE")?.trim()
+    val tip = m.firstNonBlank("id_tipologia",      "tipologia",      "ID_TIPOLOGIA")?.trim()
+    val cat = m.firstNonBlank("id_categoria",      "categoria",      "ID_CATEGORIA")?.trim()
+    val sub = m.firstNonBlank("id_sottocategoria", "sottocategoria", "ID_SOTTOCATEGORIA")?.trim()
+    if (ut.isNullOrBlank() || tip.isNullOrBlank() ||
+        cat.isNullOrBlank() || sub.isNullOrBlank()) return@mapNotNull null
+    UtcEntity(
+        key            = utcKey(ut, tip, cat, sub),
+        utente         = ut,
+        tipologia      = tip,
+        categoria      = cat,
+        sottocategoria = sub,
+        attivo         = (m["attivo"] ?: m["ATTIVO"]).asBoolDefaultTrue(),
+        tipoMovimento  = tipologiaTipoMap[tip] ?: "uscita"
+    )
 }
 
 // ── Mapper privati ────────────────────────────────────────────────────────────
