@@ -1,6 +1,5 @@
 package com.emanuele.gestionespese.ui.components
 
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -46,7 +45,6 @@ fun InstalledAppPickerSheet(
     LaunchedEffect(Unit) {
         allApps = withContext(Dispatchers.IO) {
             pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
                 .map { AppItem(pm.getApplicationLabel(it).toString(), it.packageName) }
                 .sortedBy { it.displayName.lowercase() }
         }
@@ -69,7 +67,7 @@ fun InstalledAppPickerSheet(
         ) {
             // Header
             Text(
-                "Seleziona app bancaria",
+                "Seleziona app",
                 style     = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 modifier  = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -79,7 +77,7 @@ fun InstalledAppPickerSheet(
             OutlinedTextField(
                 value         = query,
                 onValueChange = { query = it },
-                placeholder   = { Text("Cerca per nome...") },
+                placeholder   = { Text("Cerca app per nome...") },
                 leadingIcon   = { Icon(Icons.Default.Search, null) },
                 singleLine    = true,
                 modifier      = Modifier

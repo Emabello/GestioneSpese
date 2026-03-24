@@ -28,6 +28,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class BankNotificationListener : NotificationListenerService() {
@@ -57,6 +61,13 @@ class BankNotificationListener : NotificationListenerService() {
     private fun processNotification(sbn: StatusBarNotification) {
         ioScope.launch {
             try {
+                // ── Modalità cattura live (wizard configurazione) ─────────────────
+                val capturePkg = _capturePackage.value
+                if (capturePkg != null && sbn.packageName == capturePkg) {
+                    handleCaptureMode(sbn)
+                    return@launch
+                }
+
                 val bankDao = (applicationContext as MyApp).db.bankProfileDao()
                 val activeProfiles = bankDao.getActiveProfiles()
 
@@ -144,7 +155,61 @@ class BankNotificationListener : NotificationListenerService() {
         }
     }
 
+    /**
+     * Gestisce la notifica in modalità cattura live: salva nel flow [capturedNotifications]
+     * senza creare bozze nel database.
+     */
+    private fun handleCaptureMode(sbn: StatusBarNotification) {
+        val extras  = sbn.notification.extras
+        val text    = extras.getCharSequence("android.text")?.toString().orEmpty()
+        val big     = extras.getCharSequence("android.bigText")?.toString().orEmpty()
+        val content = text.ifBlank { big }
+
+        if (content.isBlank()) return
+
+        val appName = try {
+            packageManager.getApplicationLabel(
+                packageManager.getApplicationInfo(sbn.packageName, 0)
+            ).toString()
+        } catch (e: Exception) { sbn.packageName }
+
+        val captured = CapturedNotification(
+            packageName = sbn.packageName,
+            appName     = appName,
+            text        = content,
+            timestamp   = sbn.postTime
+        )
+
+        _capturedNotifications.update { current ->
+            (current + captured).takeLast(20)
+        }
+        DevLogger.log("NOTIFICA", "📥 Catturata per wizard: pkg=${sbn.packageName} text=${content.take(60)}")
+    }
+
     companion object {
         private const val TAG = "BankNotificationListener"
+
+        // ── Capture mode (wizard configurazione profilo bancario) ─────────────
+        /** Package da monitorare. null = modalità cattura inattiva. */
+        private val _capturePackage = MutableStateFlow<String?>(null)
+
+        /** Lista delle notifiche catturate durante la modalità cattura. */
+        private val _capturedNotifications = MutableStateFlow<List<CapturedNotification>>(emptyList())
+
+        /** Flow pubblico in sola lettura per osservare le notifiche catturate. */
+        val capturedNotifications: StateFlow<List<CapturedNotification>> =
+            _capturedNotifications.asStateFlow()
+
+        /** Avvia la modalità cattura: le notifiche del [packageName] vengono accumulate. */
+        fun startCapture(packageName: String) {
+            _capturedNotifications.value = emptyList()
+            _capturePackage.value = packageName
+        }
+
+        /** Ferma la modalità cattura e svuota la lista. */
+        fun stopCapture() {
+            _capturePackage.value = null
+            _capturedNotifications.value = emptyList()
+        }
     }
 }

@@ -21,7 +21,7 @@ import com.emanuele.gestionespese.ui.viewmodel.BankProfileViewModel
 @Composable
 fun BankProfileListScreen(
     vm: BankProfileViewModel,
-    onEditProfile: (profileId: Long) -> Unit,
+    onEditProfile: (profileId: Long, useWizard: Boolean) -> Unit,
     onNewProfile: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -110,7 +110,11 @@ fun BankProfileListScreen(
                     BankProfileCard(
                         profile       = profile,
                         onToggle      = { vm.toggleActive(profile) },
-                        onEdit        = { onEditProfile(profile.id) },
+                        onEdit        = {
+                            // Profili creati con il wizard → apre il wizard
+                            // Profili creati con regex manuali → apre l'editor avanzato
+                            onEditProfile(profile.id, profile.wizardSampleText != null)
+                        },
                         onDeleteLong  = { profileToDelete = profile }
                     )
                 }
