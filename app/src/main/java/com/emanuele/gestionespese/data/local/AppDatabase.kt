@@ -34,7 +34,7 @@ import com.emanuele.gestionespese.data.local.entities.*
         BankProfileEntity::class,
         ParseRuleEntity::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = false,
 )
 
@@ -65,6 +65,16 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
  * Nessuna modifica strutturale alle tabelle: migrazione no-op.
  */
 val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        // no-op
+    }
+}
+
+/**
+ * Migration 16→17: riallineamento identity hash Room dopo modifiche schema/model.
+ * Nessuna alterazione DDL necessaria: migrazione no-op.
+ */
+val MIGRATION_16_17 = object : Migration(16, 17) {
     override fun migrate(database: SupportSQLiteDatabase) {
         // no-op
     }
