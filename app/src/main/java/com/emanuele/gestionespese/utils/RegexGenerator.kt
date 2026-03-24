@@ -95,19 +95,26 @@ object RegexGenerator {
     /**
      * Rileva il pattern regex corretto per il valore numerico selezionato.
      *
-     * - "1.234,56"  → migliaia italiane → `(\d{1,3}(?:\.\d{3})*,\d{2})`
-     * - "2,50"      → decimale virgola  → `(\d+[,.]\d{2})`
-     * - "2.50"      → decimale punto    → `(\d+[,.]\d{2})`
+     * Gestisce un eventuale simbolo di valuta (€, $, £…) davanti al numero
+     * aggiungendo un prefisso opzionale `(?:[€$£¥₹]\s*)?` nel pattern generato.
+     *
+     * - "€24,90"    → `(?:[€$£¥₹]\s*)?(\d+[,.]\d{2})`
+     * - "€1.234,56" → `(?:[€$£¥₹]\s*)?(\d{1,3}(?:\.\d{3})*,\d{2})`
+     * - "24,90"     → `(\d+[,.]\d{2})`
+     * - "2.50"      → `(\d+[,.]\d{2})`
      */
     private fun detectAmountPattern(selected: String): String {
-        val stripped = selected.trim()
+        val stripped  = selected.trim()
+        val noSymbol  = stripped.trimStart { it in "€\$£¥₹" }.trim()
+        val symbolPfx = if (noSymbol.length < stripped.length) "(?:[€\$£¥₹]\\s*)?" else ""
+
         // Migliaia italiane: ha il punto come separatore migliaia E la virgola come decimale
         // Es: "1.234,56" oppure "1.234.567,89"
-        return if (stripped.contains('.') && stripped.contains(',') &&
-                   stripped.indexOf('.') < stripped.indexOf(',')) {
-            "(\\d{1,3}(?:\\.\\d{3})*,\\d{2})"
+        return if (noSymbol.contains('.') && noSymbol.contains(',') &&
+                   noSymbol.indexOf('.') < noSymbol.indexOf(',')) {
+            "$symbolPfx(\\d{1,3}(?:\\.\\d{3})*,\\d{2})"
         } else {
-            "(\\d+[,.]\\d{2})"
+            "$symbolPfx(\\d+[,.]\\d{2})"
         }
     }
 }
