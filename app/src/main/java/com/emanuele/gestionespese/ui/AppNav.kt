@@ -41,6 +41,7 @@ import com.emanuele.gestionespese.data.repo.SpesaDraftRepository
 import com.emanuele.gestionespese.ui.drafts.DraftsViewModel
 import com.emanuele.gestionespese.ui.screens.BankProfileEditScreen
 import com.emanuele.gestionespese.ui.screens.BankProfileListScreen
+import com.emanuele.gestionespese.ui.screens.BankProfileWizardScreen
 import com.emanuele.gestionespese.ui.screens.ConfigScreen
 import com.emanuele.gestionespese.ui.screens.DashboardEditScreen
 import com.emanuele.gestionespese.ui.screens.DraftsScreen
@@ -55,12 +56,13 @@ import com.emanuele.gestionespese.ui.viewmodel.DashboardViewModel
 import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
 
 object Routes {
-    const val MAIN               = "main"
-    const val FORM               = "form"
-    const val DASHBOARD_EDIT     = "dashboard_edit"
-    const val CONFIG             = "config"
-    const val BANK_PROFILES      = "bank_profiles"
-    const val BANK_PROFILE_EDIT  = "bank_profile_edit"  // ?profileId={profileId} — -1L = nuovo
+    const val MAIN                = "main"
+    const val FORM                = "form"
+    const val DASHBOARD_EDIT      = "dashboard_edit"
+    const val CONFIG              = "config"
+    const val BANK_PROFILES       = "bank_profiles"
+    const val BANK_PROFILE_EDIT   = "bank_profile_edit"    // ?profileId={profileId} — -1L = nuovo
+    const val BANK_PROFILE_WIZARD = "bank_profile_wizard"  // ?profileId={profileId} — -1L = nuovo
 }
 
 enum class MainTab(
@@ -165,11 +167,15 @@ fun AppNav(vm: SpeseViewModel) {
         composable(Routes.BANK_PROFILES) {
             BankProfileListScreen(
                 vm            = bankProfileVm,
-                onEditProfile = { profileId ->
-                    nav.navigate("${Routes.BANK_PROFILE_EDIT}?profileId=$profileId")
+                onEditProfile = { profileId, useWizard ->
+                    val route = if (useWizard)
+                        "${Routes.BANK_PROFILE_WIZARD}?profileId=$profileId"
+                    else
+                        "${Routes.BANK_PROFILE_EDIT}?profileId=$profileId"
+                    nav.navigate(route)
                 },
                 onNewProfile  = {
-                    nav.navigate("${Routes.BANK_PROFILE_EDIT}?profileId=-1")
+                    nav.navigate("${Routes.BANK_PROFILE_WIZARD}?profileId=-1")
                 },
                 onBack        = { nav.popBackStack() }
             )
@@ -187,6 +193,25 @@ fun AppNav(vm: SpeseViewModel) {
                 vm        = bankProfileVm,
                 profileId = profileId,
                 onBack    = { nav.popBackStack() }
+            )
+        }
+
+        // ── Wizard configurazione guidata ─────────────────────────────────────
+        composable(
+            route     = "${Routes.BANK_PROFILE_WIZARD}?profileId={profileId}",
+            arguments = listOf(navArgument("profileId") {
+                type         = NavType.LongType
+                defaultValue = -1L
+            })
+        ) { backStackEntry ->
+            val profileId = backStackEntry.arguments?.getLong("profileId") ?: -1L
+            BankProfileWizardScreen(
+                vm                  = bankProfileVm,
+                profileId           = profileId,
+                onBack              = { nav.popBackStack() },
+                onOpenAdvancedEditor = { advProfileId ->
+                    nav.navigate("${Routes.BANK_PROFILE_EDIT}?profileId=$advProfileId")
+                }
             )
         }
     }

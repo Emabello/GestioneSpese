@@ -34,7 +34,7 @@ import com.emanuele.gestionespese.data.local.entities.*
         BankProfileEntity::class,
         ParseRuleEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false,
 )
 
@@ -50,6 +50,14 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dashboardDao(): DashboardDao
     /** DAO per i profili bancari configurabili e le relative regole di parsing. */
     abstract fun bankProfileDao(): BankProfileDao
+}
+
+/** Migration 14→15: aggiunge campi wizard (wizardSampleText, wizardSelections) a bank_profile. */
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE bank_profile ADD COLUMN wizardSampleText TEXT")
+        database.execSQL("ALTER TABLE bank_profile ADD COLUMN wizardSelections TEXT")
+    }
 }
 
 val MIGRATION_13_14 = object : Migration(13, 14) {
