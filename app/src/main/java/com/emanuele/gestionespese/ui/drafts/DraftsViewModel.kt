@@ -14,6 +14,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.emanuele.gestionespese.data.local.entities.SpesaDraftEntity
 import com.emanuele.gestionespese.data.repo.SpesaDraftRepository
+import com.emanuele.gestionespese.notifications.ParsedNotification
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -55,6 +56,26 @@ class DraftsViewModel(private val repo: SpesaDraftRepository) : ViewModel() {
             sottocategoriaId = null,
             status = "HOLD",
             dedupKey = "TEST-$now-${Random.nextInt(0, 1_000_000)}"
+        )
+        repo.insertTest(entity)
+    }
+
+    /**
+     * Inserisce una bozza reale costruita dal risultato di un parsing di test.
+     * Usato dalla sezione sviluppatore per simulare il flusso completo
+     * notifica → bozza → schermata Notifiche.
+     *
+     * @param parsed      Risultato del parsing da `GenericBankParser`.
+     * @param profileName Nome del profilo bancario (es. "Webank"), usato come `metodoPagamento`.
+     */
+    fun insertParsedDraft(parsed: ParsedNotification, profileName: String) = viewModelScope.launch {
+        val entity = SpesaDraftEntity(
+            amountCents     = parsed.amountCents,
+            dateMillis      = parsed.dateMillis,
+            metodoPagamento = profileName,
+            descrizione     = parsed.merchant,
+            status          = "HOLD",
+            dedupKey        = "TEST-${System.currentTimeMillis()}-${Random.nextInt(0, 1_000_000)}"
         )
         repo.insertTest(entity)
     }
