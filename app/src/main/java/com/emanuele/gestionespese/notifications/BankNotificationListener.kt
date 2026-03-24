@@ -26,11 +26,14 @@ import com.emanuele.gestionespese.data.local.entities.SpesaDraftEntity
 import com.emanuele.gestionespese.utils.DevLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -38,16 +41,33 @@ class BankNotificationListener : NotificationListenerService() {
 
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    /** Job che osserva _capturePackage per scansionare le notifiche esistenti. */
+    private var captureObserverJob: Job? = null
+
     override fun onListenerConnected() {
         val msg = "Listener connesso — notifiche attive: ${activeNotifications.size}"
         DevLogger.log("NOTIFICA", msg)
         if (BuildConfig.DEBUG) Log.d(TAG, msg)
         activeNotifications.forEach { processNotification(it) }
+
+        // Ogni volta che inizia la cattura, scansiona subito le notifiche già presenti
+        captureObserverJob?.cancel()
+        captureObserverJob = ioScope.launch {
+            _capturePackage
+                .filterNotNull()
+                .distinctUntilChanged()
+                .collect { pkg ->
+                    activeNotifications
+                        ?.filter { it.packageName == pkg }
+                        ?.forEach { handleCaptureMode(it) }
+                }
+        }
     }
 
     override fun onListenerDisconnected() {
-        DevLogger.log("NOTIFICA", "Listener disconnesso")
+        captureObserverJob?.cancel()
         ioScope.cancel()
+        DevLogger.log("NOTIFICA", "Listener disconnesso")
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -148,10 +168,14 @@ class BankNotificationListener : NotificationListenerService() {
         val big    = extras.getCharSequence("android.bigText")?.toString().orEmpty()
 
         return when (profile.contentSource) {
-            "TITLE"    -> title
-            "TEXT"     -> text
-            "BIG_TEXT" -> big
-            else       -> text.ifBlank { big } // TEXT_OR_BIG (default)
+            "TITLE"          -> title
+            "TEXT"           -> text
+            "BIG_TEXT"       -> big
+            "TITLE_AND_TEXT" -> {
+                val body = big.ifBlank { text }
+                listOf(title, body).filter { it.isNotBlank() }.joinToString("\n")
+            }
+            else             -> text.ifBlank { big } // TEXT_OR_BIG (default)
         }
     }
 
@@ -161,11 +185,11 @@ class BankNotificationListener : NotificationListenerService() {
      */
     private fun handleCaptureMode(sbn: StatusBarNotification) {
         val extras  = sbn.notification.extras
+        val title   = extras.getCharSequence("android.title")?.toString().orEmpty()
         val text    = extras.getCharSequence("android.text")?.toString().orEmpty()
-        val big     = extras.getCharSequence("android.bigText")?.toString().orEmpty()
-        val content = text.ifBlank { big }
+        val bigText = extras.getCharSequence("android.bigText")?.toString().orEmpty()
 
-        if (content.isBlank()) return
+        if (title.isBlank() && text.isBlank() && bigText.isBlank()) return
 
         val appName = try {
             packageManager.getApplicationLabel(
@@ -176,14 +200,14 @@ class BankNotificationListener : NotificationListenerService() {
         val captured = CapturedNotification(
             packageName = sbn.packageName,
             appName     = appName,
-            text        = content,
+            title       = title,
+            text        = text,
+            bigText     = bigText,
             timestamp   = sbn.postTime
         )
 
-        _capturedNotifications.update { current ->
-            (current + captured).takeLast(20)
-        }
-        DevLogger.log("NOTIFICA", "📥 Catturata per wizard: pkg=${sbn.packageName} text=${content.take(60)}")
+        _capturedNotifications.update { current -> (current + captured).takeLast(20) }
+        DevLogger.log("NOTIFICA", "📥 Catturata per wizard: pkg=${sbn.packageName} title='${title.take(40)}' text='${text.take(40)}'")
     }
 
     companion object {
