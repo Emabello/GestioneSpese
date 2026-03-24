@@ -932,6 +932,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                         refreshCurrentLevel(showTopLoading = false)
                                     } catch (e: Exception) { errorMsg = e.message }
                                     finally { loadingRecordId = null; isMutating = false }
+
                                 }
                             }
                         }
@@ -940,6 +941,8 @@ fun ConfigScreen(onBack: () -> Unit) {
             }
         }
     }
+
+
 
     if (isMutating) {
         Box(
