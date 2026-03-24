@@ -34,7 +34,7 @@ import com.emanuele.gestionespese.data.local.entities.*
         BankProfileEntity::class,
         ParseRuleEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false,
 )
 
@@ -57,6 +57,16 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL("ALTER TABLE bank_profile ADD COLUMN wizardSampleText TEXT")
         database.execSQL("ALTER TABLE bank_profile ADD COLUMN wizardSelections TEXT")
+    }
+}
+
+/**
+ * Migration 15→16: riallineamento versione schema.
+ * Nessuna modifica strutturale alle tabelle: migrazione no-op.
+ */
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        // no-op
     }
 }
 
