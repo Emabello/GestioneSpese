@@ -63,6 +63,8 @@ import com.emanuele.gestionespese.data.local.entities.BankProfileEntity
 import com.emanuele.gestionespese.data.model.LinkGoogleRequest
 import com.emanuele.gestionespese.data.model.UnlinkGoogleRequest
 import com.emanuele.gestionespese.data.repo.BankProfileRepository
+import com.emanuele.gestionespese.data.repo.SpesaDraftRepository
+import com.emanuele.gestionespese.ui.drafts.DraftsViewModel
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.viewmodel.BankProfileViewModel
 import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
@@ -875,13 +877,17 @@ private fun ParserTesterSection(vm: SpeseViewModel, app: MyApp) {
             BankProfileRepository(app.db.bankProfileDao())
         )
     )
+    val draftsVm: DraftsViewModel = viewModel(
+        factory = DraftsViewModel.factory(SpesaDraftRepository(app.db.spesaDraftDao()))
+    )
 
     val profiles   by bankVm.profiles.collectAsState()
     val testResult by bankVm.testResult.collectAsState()
 
-    var selectedProfile by remember { mutableStateOf<BankProfileEntity?>(null) }
-    var notifText       by remember { mutableStateOf("") }
+    var selectedProfile  by remember { mutableStateOf<BankProfileEntity?>(null) }
+    var notifText        by remember { mutableStateOf("") }
     var dropdownExpanded by remember { mutableStateOf(false) }
+    var draftInserted    by remember { mutableStateOf(false) }
 
     // Aggiorna profilo selezionato se la lista cambia
     LaunchedEffect(profiles) {
@@ -889,6 +895,9 @@ private fun ParserTesterSection(vm: SpeseViewModel, app: MyApp) {
             selectedProfile = profiles.first()
         }
     }
+
+    // Reset feedback inserimento ogni volta che il risultato cambia
+    LaunchedEffect(testResult) { draftInserted = false }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
@@ -963,8 +972,10 @@ private fun ParserTesterSection(vm: SpeseViewModel, app: MyApp) {
                         val p = result.parsed
                         val euro = p.amountCents / 100
                         val cents = p.amountCents % 100
-                        val date = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.ITALY)
-                            .format(java.util.Date(p.dateMillis))
+                        val dateFmt = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY)
+                            .format(Date(p.dateMillis))
+
+                        // ── Box risultato parser ──────────────────────────────
                         Surface(
                             shape = RoundedCornerShape(10.dp),
                             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
@@ -982,10 +993,97 @@ private fun ParserTesterSection(vm: SpeseViewModel, app: MyApp) {
                                     style = MaterialTheme.typography.bodySmall,
                                     fontFamily = FontFamily.Monospace,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                Text("Data:      $date",
+                                Text("Data:      $dateFmt",
                                     style = MaterialTheme.typography.bodySmall,
                                     fontFamily = FontFamily.Monospace,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                        }
+
+                        // ── Anteprima blocco notifica ─────────────────────────
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "ANTEPRIMA BLOCCO NOTIFICA",
+                            style      = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color      = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.6f)
+                        )
+                        ElevatedCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors   = CardDefaults.elevatedCardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                            )
+                        ) {
+                            Row(
+                                modifier            = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment   = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        p.merchant,
+                                        style     = MaterialTheme.typography.titleMedium,
+                                        maxLines  = 1
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    AssistChip(
+                                        onClick  = {},
+                                        label    = { Text(selectedProfile?.displayName ?: "Banca",
+                                            style = MaterialTheme.typography.labelSmall) },
+                                        modifier = Modifier.height(24.dp)
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        dateFmt,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                }
+                                Text(
+                                    "$euro,${"$cents".padStart(2, '0')} €",
+                                    style      = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        // ── Pulsante inserimento + feedback ───────────────────
+                        Spacer(Modifier.height(4.dp))
+                        if (!draftInserted) {
+                            OutlinedButton(
+                                onClick  = {
+                                    draftsVm.insertParsedDraft(
+                                        parsed      = result.parsed,
+                                        profileName = selectedProfile?.displayName ?: "Test"
+                                    )
+                                    draftInserted = true
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Inserisci come bozza")
+                            }
+                        } else {
+                            Surface(
+                                shape    = RoundedCornerShape(8.dp),
+                                color    = MaterialTheme.colorScheme.secondaryContainer,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier          = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(Icons.Default.Check, null,
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                                    Text(
+                                        "Bozza inserita! Vai su Notifiche per vederla.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
                             }
                         }
                     }
