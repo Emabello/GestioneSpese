@@ -72,11 +72,43 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
 
 /**
  * Migration 16→17: riallineamento identity hash Room dopo modifiche schema/model.
- * Nessuna alterazione DDL necessaria: migrazione no-op.
+ * Rimuove la colonna legacy `contoDestinazione` da `spese` (se presente)
+ * riallineando la tabella allo schema corrente di [SpesaEntity].
  */
 val MIGRATION_16_17 = object : Migration(16, 17) {
     override fun migrate(database: SupportSQLiteDatabase) {
-        // no-op
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS spese_new (
+                id INTEGER NOT NULL PRIMARY KEY,
+                utente TEXT NOT NULL,
+                data TEXT NOT NULL,
+                importo REAL NOT NULL,
+                tipo TEXT NOT NULL,
+                tipoMovimento TEXT,
+                conto TEXT,
+                categoria TEXT,
+                sottocategoria TEXT,
+                descrizione TEXT,
+                mese INTEGER,
+                anno INTEGER
+            )
+            """.trimIndent()
+        )
+        database.execSQL(
+            """
+            INSERT INTO spese_new (
+                id, utente, data, importo, tipo, tipoMovimento,
+                conto, categoria, sottocategoria, descrizione, mese, anno
+            )
+            SELECT
+                id, utente, data, importo, tipo, tipoMovimento,
+                conto, categoria, sottocategoria, descrizione, mese, anno
+            FROM spese
+            """.trimIndent()
+        )
+        database.execSQL("DROP TABLE spese")
+        database.execSQL("ALTER TABLE spese_new RENAME TO spese")
     }
 }
 
