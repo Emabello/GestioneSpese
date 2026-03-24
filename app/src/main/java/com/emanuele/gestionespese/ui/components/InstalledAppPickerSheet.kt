@@ -1,6 +1,5 @@
 package com.emanuele.gestionespese.ui.components
 
-import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -46,7 +45,6 @@ fun InstalledAppPickerSheet(
     LaunchedEffect(Unit) {
         allApps = withContext(Dispatchers.IO) {
             pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
                 .map { AppItem(pm.getApplicationLabel(it).toString(), it.packageName) }
                 .sortedBy { it.displayName.lowercase() }
         }

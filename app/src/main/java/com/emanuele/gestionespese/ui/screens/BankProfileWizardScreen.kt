@@ -557,7 +557,7 @@ private fun WizardStep2LabelSelection(
         StepHeader(
             icon  = Icons.Default.TouchApp,
             title = "Segna le parti del testo",
-            hint  = "Tieni premuto e trascina per selezionare l'importo, poi scegli IMPORTO. Ripeti per l'esercente."
+            hint  = "Tocca la parola iniziale, poi la parola finale da includere. Premi IMPORTO o ESERCENTE per confermare."
         )
 
         SelectionLegend()
