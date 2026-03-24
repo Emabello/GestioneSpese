@@ -34,9 +34,10 @@ import com.emanuele.gestionespese.data.local.entities.*
         BankProfileEntity::class,
         ParseRuleEntity::class
     ],
-    version = 13,
-    exportSchema = false
+    version = 14,
+    exportSchema = false,
 )
+
 /** Database principale dell'app, costruito tramite [androidx.room.Room.databaseBuilder] in [MyApp]. */
 abstract class AppDatabase : RoomDatabase() {
     /** DAO per le bozze di movimenti bancari. */
@@ -49,6 +50,32 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dashboardDao(): DashboardDao
     /** DAO per i profili bancari configurabili e le relative regole di parsing. */
     abstract fun bankProfileDao(): BankProfileDao
+}
+
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        // Ricrea bank_profile con lo schema corretto (no DEFAULT, indice unique corretto)
+        database.execSQL("DROP TABLE IF EXISTS bank_profile_old")
+        database.execSQL("ALTER TABLE bank_profile RENAME TO bank_profile_old")
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS bank_profile (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                displayName TEXT NOT NULL,
+                packageName TEXT NOT NULL,
+                isActive INTEGER NOT NULL,
+                contentSource TEXT NOT NULL
+            )
+        """.trimIndent())
+        database.execSQL("""
+            INSERT INTO bank_profile (id, displayName, packageName, isActive, contentSource)
+            SELECT id, displayName, packageName, isActive, contentSource
+            FROM bank_profile_old
+        """.trimIndent())
+        database.execSQL("DROP TABLE IF EXISTS bank_profile_old")
+        database.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS index_bank_profile_packageName ON bank_profile(packageName)"
+        )
+    }
 }
 
 /** Migration 12→13: aggiunge le tabelle bank_profile e parse_rule. */
