@@ -12,8 +12,14 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.room.Room
 import com.emanuele.gestionespese.data.local.AppDatabase
+import com.emanuele.gestionespese.data.local.MIGRATION_12_13
+import com.emanuele.gestionespese.data.local.WebankSeed
 import com.emanuele.gestionespese.data.remote.RetrofitProvider
 import com.emanuele.gestionespese.data.remote.SupabaseApi
+import com.emanuele.gestionespese.utils.DevLogger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Entry point dell'applicazione. Inizializza Room e Retrofit all'avvio e
@@ -70,8 +76,17 @@ class MyApp : Application() {
             AppDatabase::class.java,
             "gestione_spese.db"
         )
-            .fallbackToDestructiveMigration(dropAllTables = true)
+            .addMigrations(MIGRATION_12_13)
             .build()
+
+        // Seed del profilo Webank (idempotente — non fa nulla se già presente)
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                WebankSeed.seedIfNeeded(db.bankProfileDao())
+            } catch (t: Throwable) {
+                DevLogger.log("SEED", "Errore seed Webank: ${t.message}")
+            }
+        }
 
         val retrofit = RetrofitProvider.create(
             baseUrl = getString(R.string.backend_url),

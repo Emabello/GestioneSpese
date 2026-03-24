@@ -1,12 +1,14 @@
 /**
  * AppDatabase.kt
  *
- * Database Room dell'applicazione. Contiene 8 tabelle:
+ * Database Room dell'applicazione. Contiene 10 tabelle:
  * - `spese` — movimenti sincronizzati dal backend
  * - `spesa_draft` — bozze da notifiche bancarie
  * - `lk_tipi`, `lk_categorie`, `lk_conti`, `lk_sottocategorie` — lookup tables
  * - `UTC_ENTITY` — associazioni utente-tipologia-categoria-sottocategoria
  * - `dashboard` — layout dashboard per utente
+ * - `bank_profile` — profili banche configurate per il parsing notifiche
+ * - `parse_rule` — regole regex per ogni campo di ogni profilo bancario
  *
  * Contiene anche le funzioni [sottoKey] e [utcKey] per generare le chiavi
  * composite usate come PrimaryKey in alcune entità.
@@ -15,6 +17,8 @@ package com.emanuele.gestionespese.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.emanuele.gestionespese.data.local.entities.*
 
 @Database(
@@ -26,9 +30,11 @@ import com.emanuele.gestionespese.data.local.entities.*
         SottoCategoriaEntity::class,
         UtcEntity::class,
         SpesaEntity::class,
-        DashboardEntity::class
+        DashboardEntity::class,
+        BankProfileEntity::class,
+        ParseRuleEntity::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 /** Database principale dell'app, costruito tramite [androidx.room.Room.databaseBuilder] in [MyApp]. */
@@ -41,6 +47,41 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun spesaDao(): SpesaDao
     /** DAO per il layout della dashboard. */
     abstract fun dashboardDao(): DashboardDao
+    /** DAO per i profili bancari configurabili e le relative regole di parsing. */
+    abstract fun bankProfileDao(): BankProfileDao
+}
+
+/** Migration 12→13: aggiunge le tabelle bank_profile e parse_rule. */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS bank_profile (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                displayName TEXT NOT NULL,
+                packageName TEXT NOT NULL,
+                isActive INTEGER NOT NULL DEFAULT 1,
+                contentSource TEXT NOT NULL DEFAULT 'TEXT_OR_BIG',
+                UNIQUE(packageName)
+            )
+        """.trimIndent())
+
+        database.execSQL("""
+            CREATE TABLE IF NOT EXISTS parse_rule (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                bankProfileId INTEGER NOT NULL,
+                field TEXT NOT NULL,
+                regex TEXT NOT NULL,
+                groupIndex INTEGER NOT NULL DEFAULT 1,
+                priority INTEGER NOT NULL DEFAULT 0,
+                description TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY(bankProfileId) REFERENCES bank_profile(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+
+        database.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_parse_rule_bankProfileId ON parse_rule(bankProfileId)"
+        )
+    }
 }
 
 // ── Chiavi composite usate nelle tabelle Room ─────────────────────────────────

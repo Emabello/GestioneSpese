@@ -1,17 +1,18 @@
 /**
  * BankNotificationListener.kt
  *
- * [NotificationListenerService] che intercetta le notifiche push dell'app bancaria
- * Webank e le converte in bozze di movimenti ([SpesaDraftEntity]) salvate nel
+ * [NotificationListenerService] che intercetta le notifiche push delle app bancarie
+ * configurate e le converte in bozze di movimenti ([SpesaDraftEntity]) salvate nel
  * database locale tramite [SpesaDraftDao.insertIgnore] con deduplicazione SHA-256.
  *
  * Flusso:
  * 1. Il sistema chiama [onNotificationPosted] per ogni nuova notifica.
- * 2. Solo le notifiche con packageName == `com.opentecheng.android.webank` vengono elaborate.
- * 3. [parseWebank] estrae importo, merchant e data dal testo della notifica.
- * 4. [buildDedupKey] genera la chiave di deduplicazione.
- * 5. La bozza viene salvata in Room (ignorata se già presente).
- * 6. Tutti gli eventi vengono loggati in [DevLogger] per il pannello sviluppatore.
+ * 2. Si caricano i profili attivi dal DB ([BankProfileDao.getActiveProfiles]).
+ * 3. Si cerca il profilo con packageName == sbn.packageName.
+ * 4. Se trovato, si estrae il testo in base a [BankProfileEntity.contentSource].
+ * 5. [GenericBankParser.parse] estrae importo, merchant e data usando le regole del profilo.
+ * 6. La bozza viene salvata in Room (ignorata se già presente via dedupKey).
+ * 7. Tutti gli eventi vengono loggati in [DevLogger].
  */
 package com.emanuele.gestionespese.notifications
 
@@ -20,6 +21,7 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.emanuele.gestionespese.BuildConfig
 import com.emanuele.gestionespese.MyApp
+import com.emanuele.gestionespese.data.local.entities.BankProfileEntity
 import com.emanuele.gestionespese.data.local.entities.SpesaDraftEntity
 import com.emanuele.gestionespese.utils.DevLogger
 import kotlinx.coroutines.CoroutineScope
@@ -53,66 +55,96 @@ class BankNotificationListener : NotificationListenerService() {
     }
 
     private fun processNotification(sbn: StatusBarNotification) {
-        if (sbn.packageName != WEBANK_PKG) return
-
-        val extras  = sbn.notification.extras
-        val text    = extras.getCharSequence("android.text")?.toString().orEmpty()
-        val big     = extras.getCharSequence("android.bigText")?.toString().orEmpty()
-        val content = text.ifBlank { big }
-
-        DevLogger.log("NOTIFICA", "=== WEBANK NOTIFICA ===")
-        DevLogger.log("NOTIFICA", "text: '${text.take(100)}'")
-        DevLogger.log("NOTIFICA", "bigText: '${big.take(100)}'")
-        DevLogger.log("NOTIFICA", "content usato (${content.length} chars): '${content.take(120)}'")
-
-        if (BuildConfig.DEBUG) {
-            Log.d(TAG, "=== CONTENUTO NOTIFICA COMPLETO ===")
-            Log.d(TAG, "text: '$text'")
-            Log.d(TAG, "bigText: '$big'")
-            Log.d(TAG, "content: '$content'")
-        }
-
-        val parsed = parseWebank(content, sbn.postTime) ?: run {
-            DevLogger.log("NOTIFICA", "⚠ Pattern non trovato — aggiorna regex in WebankParser")
-            if (BuildConfig.DEBUG) Log.w(TAG, "Pattern non trovato")
-            return
-        }
-
-        DevLogger.log("NOTIFICA", "✓ Parsed: amountCents=${parsed.amountCents} merchant='${parsed.merchant}'")
-
-        val entity = SpesaDraftEntity(
-            amountCents      = parsed.amountCents,
-            dateMillis       = parsed.dateMillis,
-            metodoPagamento  = "",
-            descrizione      = parsed.merchant,
-            categoriaId      = null,
-            sottocategoriaId = null,
-            status           = "HOLD",
-            dedupKey         = buildDedupKey(
-                sourceLabel = "Webank",
-                merchant    = parsed.merchant,
-                amountCents = parsed.amountCents,
-                timeMillis  = parsed.dateMillis
-            )
-        )
-
         ioScope.launch {
             try {
-                val dao = (applicationContext as MyApp).db.spesaDraftDao()
-                val id  = dao.insertIgnore(entity)
+                val bankDao = (applicationContext as MyApp).db.bankProfileDao()
+                val activeProfiles = bankDao.getActiveProfiles()
+
+                // Cerca il profilo corrispondente al package della notifica
+                val profile = activeProfiles.find { it.packageName == sbn.packageName }
+                if (profile == null) {
+                    // Notifica da app non configurata — ignorata silenziosamente
+                    return@launch
+                }
+
+                DevLogger.log("NOTIFICA", "=== ${profile.displayName.uppercase()} NOTIFICA ===")
+
+                val content = extractContent(sbn, profile)
+                DevLogger.log("NOTIFICA", "content (${content.length} chars): '${content.take(120)}'")
+
+                if (BuildConfig.DEBUG) {
+                    Log.d(TAG, "=== CONTENUTO NOTIFICA [${profile.displayName}] ===")
+                    Log.d(TAG, "content: '$content'")
+                }
+
+                val rules = bankDao.getRulesForProfile(profile.id)
+                val parsed = GenericBankParser.parse(
+                    text         = content,
+                    rules        = rules,
+                    fallbackTime = sbn.postTime,
+                    debug        = false
+                )
+
+                if (parsed == null) {
+                    DevLogger.log("NOTIFICA", "⚠ Pattern non trovato per ${profile.displayName} — verifica le regex nel configuratore")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "Pattern non trovato per ${profile.displayName}")
+                    return@launch
+                }
+
+                DevLogger.log("NOTIFICA", "✓ Parsed: amountCents=${parsed.amountCents} merchant='${parsed.merchant}'")
+
+                val entity = SpesaDraftEntity(
+                    amountCents      = parsed.amountCents,
+                    dateMillis       = parsed.dateMillis,
+                    metodoPagamento  = profile.displayName,
+                    descrizione      = parsed.merchant,
+                    categoriaId      = null,
+                    sottocategoriaId = null,
+                    status           = "HOLD",
+                    dedupKey         = buildDedupKey(
+                        sourceLabel = profile.displayName,
+                        merchant    = parsed.merchant,
+                        amountCents = parsed.amountCents,
+                        timeMillis  = parsed.dateMillis
+                    )
+                )
+
+                val draftDao = (applicationContext as MyApp).db.spesaDraftDao()
+                val id = draftDao.insertIgnore(entity)
                 val msg = if (id > 0) "✓ Bozza salvata id=$id importo=${parsed.amountCents}c"
                 else "↩ Duplicato ignorato (già presente)"
                 DevLogger.log("NOTIFICA", msg)
                 if (BuildConfig.DEBUG) Log.d(TAG, msg)
+
             } catch (t: Throwable) {
-                DevLogger.log("NOTIFICA", "ERROR salvataggio: ${t.message}")
-                Log.e(TAG, "Errore salvataggio bozza", t)
+                DevLogger.log("NOTIFICA", "ERROR processNotification: ${t.message}")
+                Log.e(TAG, "Errore elaborazione notifica", t)
             }
         }
     }
 
+    /**
+     * Estrae il testo della notifica in base al campo [BankProfileEntity.contentSource]:
+     * - TEXT_OR_BIG: usa android.text, se vuoto usa android.bigText (default Webank)
+     * - TEXT: usa solo android.text
+     * - BIG_TEXT: usa solo android.bigText
+     * - TITLE: usa android.title
+     */
+    private fun extractContent(sbn: StatusBarNotification, profile: BankProfileEntity): String {
+        val extras = sbn.notification.extras
+        val title  = extras.getCharSequence("android.title")?.toString().orEmpty()
+        val text   = extras.getCharSequence("android.text")?.toString().orEmpty()
+        val big    = extras.getCharSequence("android.bigText")?.toString().orEmpty()
+
+        return when (profile.contentSource) {
+            "TITLE"    -> title
+            "TEXT"     -> text
+            "BIG_TEXT" -> big
+            else       -> text.ifBlank { big } // TEXT_OR_BIG (default)
+        }
+    }
+
     companion object {
-        private const val TAG       = "BankNotificationListener"
-        private const val WEBANK_PKG = "com.opentecheng.android.webank"
+        private const val TAG = "BankNotificationListener"
     }
 }
