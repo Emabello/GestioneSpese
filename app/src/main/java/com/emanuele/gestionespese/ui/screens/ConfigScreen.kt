@@ -326,6 +326,24 @@ fun ConfigScreen(onBack: () -> Unit) {
                         "attivo" to e.attivo
                     )
                 }
+                val localUtcs = db.lookupDao().getUtcsByUtente(currentUtente).map { e ->
+                    mapOf<String, Any?>(
+                        "id" to e.key,
+                        "id_utente" to e.utente,
+                        "id_tipologia" to e.tipologia,
+                        "id_categoria" to e.categoria,
+                        "id_sottocategoria" to e.sottocategoria,
+                        "attivo" to e.attivo
+                    )
+                }
+                val localConti = db.lookupDao().getContiRaw(currentUtente).map { e ->
+                    val p = e.value.split(" - ", limit = 2)
+                    mapOf<String, Any?>(
+                        "id" to p.getOrNull(0),
+                        "descrizione" to p.getOrNull(1),
+                        "attivo" to e.attivo
+                    )
+                }
 
                 val hasLocal = localTipologie.isNotEmpty() || localCategorie.isNotEmpty() || localSottocategorie.isNotEmpty() || localUtcs.isNotEmpty() || localConti.isNotEmpty()
                 isLoading = !hasLocal
