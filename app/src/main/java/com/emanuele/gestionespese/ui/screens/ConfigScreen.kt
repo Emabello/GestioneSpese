@@ -259,6 +259,17 @@ fun ConfigScreen(onBack: () -> Unit) {
         snackMsg?.let { snackbarHostState.showSnackbar(it); snackMsg = null }
     }
 
+    errorMsg?.let { err ->
+        AlertDialog(
+            onDismissRequest = { errorMsg = null },
+            title = { Text("Operazione non riuscita") },
+            text = { Text(err) },
+            confirmButton = {
+                TextButton(onClick = { errorMsg = null }) { Text("OK") }
+            }
+        )
+    }
+
     // ── Carica dati ───────────────────────────────────────────────────
     // Tipi, categorie, sottocategorie: da Room (già sincronizzate da syncAllBatch,
     // zero chiamate API). UTCs dall'API perché il loro id numerico non è in Room
@@ -266,54 +277,72 @@ fun ConfigScreen(onBack: () -> Unit) {
     // Conti e UC vengono caricati lazy nel LaunchedEffect(activeTab) → CONTI.
     fun loadAllData(forceRefresh: Boolean = false) {
         scope.launch {
-            isLoading = true; errorMsg = null
+            errorMsg = null
             try {
                 val db = (context.applicationContext as MyApp).db
 
-                // Tipologie da Room
-                if (forceRefresh || allTipologie.isEmpty()) {
-                    allTipologie = db.lookupDao().getTipiRaw().map { e ->
-                        val p = e.value.split(" - ", limit = 2)
-                        mapOf<String, Any?>(
-                            "id"             to p.getOrNull(0),
-                            "descrizione"    to p.getOrNull(1),
-                            "attivo"         to e.attivo,
-                            "tipo_movimento" to e.tipoMovimento
-                        )
-                    }
+                val localTipologie = db.lookupDao().getTipiRaw().map { e ->
+                    val p = e.value.split(" - ", limit = 2)
+                    mapOf<String, Any?>(
+                        "id"             to p.getOrNull(0),
+                        "descrizione"    to p.getOrNull(1),
+                        "attivo"         to e.attivo,
+                        "tipo_movimento" to e.tipoMovimento
+                    )
+                }
+                val localCategorie = db.lookupDao().getCategorieRaw().map { e ->
+                    val p = e.value.split(" - ", limit = 2)
+                    mapOf<String, Any?>(
+                        "id"          to p.getOrNull(0),
+                        "descrizione" to p.getOrNull(1),
+                        "attiva"      to e.attivo
+                    )
+                }
+                val localSottocategorie = db.lookupDao().getSottocategorieRaw().map { e ->
+                    mapOf<String, Any?>(
+                        "id"           to e.id,
+                        "id_categoria" to e.categoria,
+                        "descrizione"  to e.sottocategoria,
+                        "attivo"       to e.attivo
+                    )
+                }
+                val localUtcs = db.lookupDao().getUtcsByUtente(currentUtente).map { e ->
+                    mapOf<String, Any?>(
+                        "id" to e.key,
+                        "id_utente" to e.utente,
+                        "id_tipologia" to e.tipologia,
+                        "id_categoria" to e.categoria,
+                        "id_sottocategoria" to e.sottocategoria,
+                        "attivo" to e.attivo
+                    )
+                }
+                val localConti = db.lookupDao().getContiRaw(currentUtente).map { e ->
+                    val p = e.value.split(" - ", limit = 2)
+                    mapOf<String, Any?>(
+                        "id" to p.getOrNull(0),
+                        "descrizione" to p.getOrNull(1),
+                        "attivo" to e.attivo
+                    )
                 }
 
-                // Categorie da Room
-                if (forceRefresh || allCategorie.isEmpty()) {
-                    allCategorie = db.lookupDao().getCategorieRaw().map { e ->
-                        val p = e.value.split(" - ", limit = 2)
-                        mapOf<String, Any?>(
-                            "id"          to p.getOrNull(0),
-                            "descrizione" to p.getOrNull(1),
-                            "attiva"      to e.attivo
-                        )
-                    }
-                }
+                val hasLocal = localTipologie.isNotEmpty() || localCategorie.isNotEmpty() || localSottocategorie.isNotEmpty() || localUtcs.isNotEmpty() || localConti.isNotEmpty()
+                isLoading = !hasLocal
 
-                // Sottocategorie da Room (hanno id numerico salvato)
-                if (forceRefresh || allSottocategorie.isEmpty()) {
-                    allSottocategorie = db.lookupDao().getSottocategorieRaw().map { e ->
-                        mapOf<String, Any?>(
-                            "id"           to e.id,
-                            "id_categoria" to e.categoria,
-                            "descrizione"  to e.sottocategoria,
-                            "attivo"       to e.attivo
-                        )
-                    }
-                }
+                if (forceRefresh || allTipologie.isEmpty()) allTipologie = localTipologie
+                if (forceRefresh || allCategorie.isEmpty()) allCategorie = localCategorie
+                if (forceRefresh || allSottocategorie.isEmpty()) allSottocategorie = localSottocategorie
+                if (forceRefresh || allUtcs.isEmpty()) allUtcs = localUtcs
+                if (forceRefresh || allConti.isEmpty()) allConti = localConti
 
-                // Dati relazione/config dall'API: servono per stato attivo e CRUD puntuali
-                allUtcs = api.getUtcs().data ?: emptyList()
-                allConti = api.getConti().data ?: emptyList()
-                allUc = api.getUc(utente = currentUtente).data ?: emptyList()
-
-            } catch (e: Exception) { errorMsg = e.message }
-            finally { isLoading = false }
+                // Refresh remoto silenzioso: serve per avere gli id numerici reali utili ai CRUD.
+                allUtcs = api.getUtcs().data ?: allUtcs
+                allConti = api.getConti().data ?: allConti
+                allUc = api.getUc(utente = currentUtente).data ?: allUc
+            } catch (e: Exception) {
+                errorMsg = e.message
+            } finally {
+                isLoading = false
+            }
         }
     }
 
@@ -448,6 +477,8 @@ fun ConfigScreen(onBack: () -> Unit) {
                     val editingRecordId = selectedRecord?.let(::recordId)
                     val isEditing = showEditDialog && selectedRecord != null
                     var targetLoadingRecordId: String? = editingRecordId
+                    showAddDialog = false
+                    showEditDialog = false
                     try {
                         if (isEditing && selectedRecord != null) {
                             // ── MODIFICA: solo campi sicuri ───────────
@@ -621,7 +652,6 @@ fun ConfigScreen(onBack: () -> Unit) {
 
                             snackMsg = "Aggiunto in ${dialogTable.label}"
                         }
-                        showAddDialog = false; showEditDialog = false
                         if (isEditing && !editingRecordId.isNullOrBlank()) {
                             loadingRecordId = editingRecordId
                         }
@@ -648,6 +678,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                 TextButton(onClick = {
                     val record = selectedRecord ?: return@TextButton
                     val thisId = recordId(record)
+                    showDeleteConfirm = false
                     if (thisId.isNotBlank()) {
                         loadingRecordId = thisId
                         scope.launch {
@@ -663,11 +694,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                                 ?: return@forEach
                                             api.deleteRecord(GenericDeleteRequest(resource = ConfigTable.UTCS.resource, id = utcsId))
                                         }
-                                        val baseId = (record["id"] as? Double)?.toInt()
-                                            ?: record["id"].toString().toIntOrNull()
-                                            ?: return@launch
-                                        api.deleteRecord(GenericDeleteRequest(resource = dialogTable.resource, id = baseId))
-                                        snackMsg = "Eliminate relazione e voce ${dialogTable.label.lowercase()}"
+                                        snackMsg = if (rowsToDelete.isEmpty()) "Nessuna riga UTCS da eliminare" else "Relazione UTCS eliminata"
                                     }
                                     ConfigTable.CONTO -> {
                                         val rowsToDelete = findUcRowsForRecord(record)
@@ -677,25 +704,13 @@ fun ConfigScreen(onBack: () -> Unit) {
                                                 ?: return@forEach
                                             api.deleteRecord(GenericDeleteRequest(resource = ConfigTable.UC.resource, id = ucId))
                                         }
-                                        val baseId = (record["id"] as? Double)?.toInt()
-                                            ?: record["id"].toString().toIntOrNull()
-                                            ?: return@launch
-                                        api.deleteRecord(GenericDeleteRequest(resource = ConfigTable.CONTO.resource, id = baseId))
-                                        snackMsg = "Eliminate relazione e voce conto"
+                                        snackMsg = if (rowsToDelete.isEmpty()) "Nessuna riga UC da eliminare" else "Relazione conto eliminata"
                                     }
-                                    else -> {
-                                        val id = (record["id"] as? Double)?.toInt()
-                                            ?: record["id"].toString().toIntOrNull()
-                                            ?: return@launch
-                                        api.deleteRecord(GenericDeleteRequest(resource = dialogTable.resource, id = id))
-                                        snackMsg = "Record eliminato"
-                                    }
+                                    else -> Unit
                                 }
-                                showDeleteConfirm = false
                                 refreshCurrentLevel(showTopLoading = false)
                             } catch (e: Exception) {
                                 errorMsg = e.message
-                                showDeleteConfirm = false
                             } finally { loadingRecordId = null }
                         }
                     }
