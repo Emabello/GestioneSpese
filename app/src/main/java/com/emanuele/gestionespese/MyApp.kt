@@ -16,6 +16,7 @@ import com.emanuele.gestionespese.data.local.MIGRATION_12_13
 import com.emanuele.gestionespese.data.local.MIGRATION_13_14
 import com.emanuele.gestionespese.data.local.MIGRATION_14_15
 import com.emanuele.gestionespese.data.local.MIGRATION_15_16
+import com.emanuele.gestionespese.data.local.MIGRATION_16_17
 import com.emanuele.gestionespese.data.local.WebankSeed
 import com.emanuele.gestionespese.data.remote.RetrofitProvider
 import com.emanuele.gestionespese.data.remote.SupabaseApi
@@ -79,7 +80,14 @@ class MyApp : Application() {
             AppDatabase::class.java,
             "gestione_spese.db"
         )
-            .addMigrations(MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+            .addMigrations(
+                MIGRATION_12_13,
+                MIGRATION_13_14,
+                MIGRATION_14_15,
+                MIGRATION_15_16,
+                MIGRATION_16_17
+            )
+            .fallbackToDestructiveMigrationOnDowngrade()
             .build()
 
         // Seed del profilo Webank (idempotente — non fa nulla se già presente)
