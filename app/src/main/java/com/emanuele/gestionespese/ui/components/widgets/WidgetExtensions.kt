@@ -86,12 +86,12 @@ fun SpesaView.isUscita(): Boolean {
  * I trasferimenti in uscita dal conto riducono il saldo; quelli in entrata lo aumentano.
  * I trasferimenti NON incidono sul saldo globale ma influenzano i singoli conti.
  */
-fun List<SpesaView>.saldoPerConto(conto: String): Double {
+fun List<SpesaView>.saldoPerConto(conto: String, initialBalance: Double = 0.0): Double {
     val entrate             = filter { it.conto == conto && it.isEntrata() }.sumOf { it.importo }
     val uscite              = filter { it.conto == conto && it.isUscita() }.sumOf { it.importo }
     val trasfUsciti         = filter { it.conto == conto && it.isTransfer() }.sumOf { it.importo }
     val trasfEntratiInConto = filter { it.conto_destinazione == conto && it.isTransfer() }.sumOf { it.importo }
-    return entrate - uscite - trasfUsciti + trasfEntratiInConto
+    return initialBalance + entrate - uscite - trasfUsciti + trasfEntratiInConto
 }
 
 /** Restituisce l'etichetta breve del periodo per la UI (es. `"mese"`, `"30gg"`, `"anno"`). */

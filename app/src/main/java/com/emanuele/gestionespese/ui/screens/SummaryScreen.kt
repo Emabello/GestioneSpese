@@ -40,12 +40,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.ui.components.widgets.*
 import com.emanuele.gestionespese.ui.components.widgets.saldoPerConto
 import com.emanuele.gestionespese.ui.theme.Brand
+import com.emanuele.gestionespese.utils.InitialBalanceManager
 import com.emanuele.gestionespese.ui.theme.Danger
 import com.emanuele.gestionespese.ui.theme.ExpenseContainer
 import com.emanuele.gestionespese.ui.theme.IncomeContainer
@@ -358,9 +360,13 @@ fun SummaryScreen(
             }
         }
 
-        // Saldi cumulativi per conto (calcolati su TUTTI i movimenti)
+        // Saldi cumulativi per conto (calcolati su TUTTI i movimenti + saldo iniziale)
+        val summaryContext = LocalContext.current
         val contiSaldi = remember(state.spese, state.conti) {
-            state.conti.map { conto -> conto to state.spese.saldoPerConto(conto) }
+            state.conti.map { conto ->
+                val ib = InitialBalanceManager.getBalance(summaryContext, conto)
+                conto to state.spese.saldoPerConto(conto, ib)
+            }
         }
 
         // Saldo totale patrimonio

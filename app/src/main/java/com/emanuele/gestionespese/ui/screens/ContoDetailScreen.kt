@@ -21,10 +21,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.ui.components.widgets.isTransfer
 import com.emanuele.gestionespese.ui.components.widgets.saldoPerConto
 import com.emanuele.gestionespese.ui.theme.Brand
+import com.emanuele.gestionespese.utils.InitialBalanceManager
 import com.emanuele.gestionespese.ui.theme.Danger
 import com.emanuele.gestionespese.ui.theme.ExpenseContainer
 import com.emanuele.gestionespese.ui.theme.IncomeContainer
@@ -50,8 +52,10 @@ fun ContoDetailScreen(
         }.sortedByDescending { it.data }
     }
 
-    val saldo = remember(state.spese, conto) {
-        state.spese.saldoPerConto(conto)
+    val context = LocalContext.current
+    val initialBalance = remember(conto) { InitialBalanceManager.getBalance(context, conto) }
+    val saldo = remember(state.spese, conto, initialBalance) {
+        state.spese.saldoPerConto(conto, initialBalance)
     }
 
     val isPositive = saldo >= 0

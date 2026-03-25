@@ -472,6 +472,22 @@ fun ConfigScreen(onBack: () -> Unit) {
         return match?.let { extractId(it["id"]) }?.takeIf { it.isNotBlank() }
     }
 
+    suspend fun resolveInsertedCategoriaId(descrizione: String): String? {
+        val remote = api.getCategorie().data ?: return null
+        val match = remote
+            .filter { it.descrizione?.trim().orEmpty() == descrizione.trim() }
+            .maxByOrNull { it.id }
+        return match?.id?.toString()?.takeIf { it.isNotBlank() }
+    }
+
+    suspend fun resolveInsertedContoId(descrizione: String): String? {
+        val remote = api.getConti().data ?: return null
+        val match = remote
+            .filter { it["descrizione"]?.toString()?.trim().orEmpty() == descrizione.trim() }
+            .maxByOrNull { extractId(it["id"]).toIntOrNull() ?: Int.MIN_VALUE }
+        return match?.let { extractId(it["id"]) }?.takeIf { it.isNotBlank() }
+    }
+
     // ── Dialog Aggiungi / Modifica ────────────────────────────────────
     if (showAddDialog || showEditDialog) {
         ConfigRecordDialog(
@@ -527,6 +543,16 @@ fun ConfigScreen(onBack: () -> Unit) {
                                 newId = resolveInsertedTipologiaId(
                                     descrizione = data["descrizione"]?.toString().orEmpty(),
                                     tipoMovimento = data["tipo_movimento"]?.toString().orEmpty()
+                                )
+                            }
+                            if (dialogTable == ConfigTable.CATEGORIA && newId.isNullOrBlank()) {
+                                newId = resolveInsertedCategoriaId(
+                                    descrizione = data["descrizione"]?.toString().orEmpty()
+                                )
+                            }
+                            if (dialogTable == ConfigTable.CONTO && newId.isNullOrBlank()) {
+                                newId = resolveInsertedContoId(
+                                    descrizione = data["descrizione"]?.toString().orEmpty()
                                 )
                             }
 
@@ -698,7 +724,12 @@ fun ConfigScreen(onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text("Elimina record") },
-            text  = { Text("Confermi l'eliminazione? L'operazione è definitiva.") },
+            text  = { Text(
+                if (dialogTable == ConfigTable.CONTO)
+                    "Confermi la rimozione dell'associazione con questo conto? Il conto resterà disponibile per altri utenti."
+                else
+                    "Confermi l'eliminazione? L'operazione è definitiva."
+            ) },
             confirmButton = {
                 TextButton(onClick = {
                     val record = selectedRecord ?: return@TextButton
@@ -723,7 +754,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                         snackMsg = if (rowsToDelete.isEmpty()) "Nessuna riga UTCS da eliminare" else "Relazione UTCS eliminata"
                                     }
                                     ConfigTable.CONTO -> {
-                                        // 1. Cancella prima le righe UC collegate
+                                        // Cancella solo le righe UC (il conto è condiviso tra utenti)
                                         val rowsToDelete = findUcRowsForRecord(record)
                                         rowsToDelete.forEach { ucRow ->
                                             val ucId = (ucRow["id"] as? Double)?.toInt()
@@ -731,15 +762,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                                 ?: return@forEach
                                             api.deleteRecord(GenericDeleteRequest(resource = ConfigTable.UC.resource, id = ucId))
                                         }
-                                        // 2. Cancella il record CONTO
-                                        val contoId = (record["id"] as? Double)?.toInt()
-                                            ?: record["id"].toString().toIntOrNull()
-                                        if (contoId != null) {
-                                            api.deleteRecord(GenericDeleteRequest(resource = ConfigTable.CONTO.resource, id = contoId))
-                                            snackMsg = "Conto eliminato"
-                                        } else {
-                                            snackMsg = if (rowsToDelete.isEmpty()) "Nessuna riga UC da eliminare" else "Relazione conto eliminata"
-                                        }
+                                        snackMsg = if (rowsToDelete.isEmpty()) "Nessuna riga UC da eliminare" else "Associazione conto rimossa"
                                     }
                                     else -> Unit
                                 }
@@ -922,19 +945,7 @@ fun ConfigScreen(onBack: () -> Unit) {
                                                 }
                                             }
                                             ConfigTable.CONTO -> {
-                                                // 1. Aggiorna il record CONTO direttamente
-                                                val contoId = (record["id"] as? Double)?.toInt()
-                                                    ?: record["id"].toString().toIntOrNull()
-                                                if (contoId != null) {
-                                                    api.updateRecord(
-                                                        GenericUpdateRequest(
-                                                            resource = ConfigTable.CONTO.resource,
-                                                            id       = contoId,
-                                                            data     = mapOf("attivo" to newVal).sanitizeForSheet()
-                                                        )
-                                                    )
-                                                }
-                                                // 2. Cascade: aggiorna anche le righe UC collegate
+                                                // Aggiorna solo le righe UC (il conto è condiviso tra utenti)
                                                 val rowsToUpdate = findUcRowsForRecord(record)
                                                 rowsToUpdate.forEach { ucRow ->
                                                     val ucId = (ucRow["id"] as? Double)?.toInt()

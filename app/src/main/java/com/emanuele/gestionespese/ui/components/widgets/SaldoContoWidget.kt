@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.SpesaView
@@ -26,6 +27,7 @@ import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.theme.Danger
 import com.emanuele.gestionespese.ui.theme.expenseContainer
 import com.emanuele.gestionespese.ui.theme.incomeContainer
+import com.emanuele.gestionespese.utils.InitialBalanceManager
 import java.util.Locale
 
 @Composable
@@ -40,7 +42,9 @@ fun SaldoContoWidget(
             ?: ""
     }
 
-    val saldo = remember(spese, conto) { spese.saldoPerConto(conto) }
+    val context = LocalContext.current
+    val initialBalance = remember(conto) { InitialBalanceManager.getBalance(context, conto) }
+    val saldo = remember(spese, conto, initialBalance) { spese.saldoPerConto(conto, initialBalance) }
     val isPositive = saldo >= 0
 
     val speseFiltered    = remember(spese, config.periodo) { spese.filteredByPeriodo(config.periodo) }

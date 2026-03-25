@@ -46,8 +46,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -62,6 +64,7 @@ import com.emanuele.gestionespese.MyApp
 import com.emanuele.gestionespese.data.local.entities.BankProfileEntity
 import com.emanuele.gestionespese.data.model.LinkGoogleRequest
 import com.emanuele.gestionespese.data.model.UnlinkGoogleRequest
+import com.emanuele.gestionespese.data.local.BankProfileBackupManager
 import com.emanuele.gestionespese.data.repo.BankProfileRepository
 import com.emanuele.gestionespese.data.repo.SpesaDraftRepository
 import com.emanuele.gestionespese.ui.drafts.DraftsViewModel
@@ -70,6 +73,7 @@ import com.emanuele.gestionespese.ui.viewmodel.BankProfileViewModel
 import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
 import com.emanuele.gestionespese.ui.viewmodel.TestResult
 import com.emanuele.gestionespese.utils.DevLogger
+import com.emanuele.gestionespese.utils.InitialBalanceManager
 import com.emanuele.gestionespese.utils.extractSubFromToken
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -708,6 +712,96 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(8.dp))
 
+            // ── Sezione: Saldi iniziali ────────────────────────────────────
+            if (state.conti.isNotEmpty()) {
+                SectionHeader("Saldi iniziali")
+
+                ElevatedCard(
+                    modifier  = Modifier.fillMaxWidth(),
+                    shape     = RoundedCornerShape(20.dp),
+                    elevation = CardDefaults.elevatedCardElevation(1.dp),
+                    colors    = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column {
+                        state.conti.forEachIndexed { index, conto ->
+                            val contoLabel = conto.substringAfter(" - ", conto)
+                            var balanceText by remember(conto) {
+                                mutableStateOf(
+                                    InitialBalanceManager.getBalance(context, conto).let {
+                                        if (it == 0.0) "" else String.format(Locale.US, "%.2f", it)
+                                    }
+                                )
+                            }
+                            var saved by remember { mutableStateOf(false) }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Brand.copy(alpha = 0.12f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.AccountBalance,
+                                        contentDescription = null,
+                                        tint = Brand,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        contoLabel,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        if (saved) "Salvato" else "Saldo iniziale",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (saved) Brand else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                OutlinedTextField(
+                                    value = balanceText,
+                                    onValueChange = { balanceText = it; saved = false },
+                                    modifier = Modifier.width(130.dp),
+                                    singleLine = true,
+                                    placeholder = { Text("0.00") },
+                                    suffix = { Text("€") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                                )
+                                IconButton(onClick = {
+                                    val amount = balanceText.replace(",", ".").toDoubleOrNull() ?: 0.0
+                                    InitialBalanceManager.setBalance(context, conto, amount)
+                                    saved = true
+                                }) {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = "Salva",
+                                        tint = if (saved) Brand else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            if (index < state.conti.size - 1) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+            }
+
             // ── Sezione: App ─────────────────────────────────────────────────
             SectionHeader("App")
 
@@ -874,7 +968,10 @@ private fun ParserTesterSection(vm: SpeseViewModel, app: MyApp) {
     val context = LocalContext.current
     val bankVm: BankProfileViewModel = viewModel(
         factory = BankProfileViewModel.factory(
-            BankProfileRepository(app.db.bankProfileDao())
+            BankProfileRepository(
+                app.db.bankProfileDao(),
+                BankProfileBackupManager(context.applicationContext)
+            )
         )
     )
     val draftsVm: DraftsViewModel = viewModel(

@@ -21,6 +21,9 @@ interface BankProfileDao {
     @Query("SELECT * FROM bank_profile WHERE isActive = 1")
     suspend fun getActiveProfiles(): List<BankProfileEntity>
 
+    @Query("SELECT * FROM bank_profile")
+    suspend fun getAllProfilesOnce(): List<BankProfileEntity>
+
     @Query("SELECT * FROM bank_profile WHERE id = :id")
     suspend fun getProfileById(id: Long): BankProfileEntity?
 
