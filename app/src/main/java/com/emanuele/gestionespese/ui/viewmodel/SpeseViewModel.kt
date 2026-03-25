@@ -260,8 +260,8 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
                 return@launch
             }
 
-            // Room vuoto → sync remoto (include anche UTCs)
-            repo.refreshLookupsFromRemoteAndSave(utenteId = currentUtente)
+            // Room vuoto → sync batch (popola tutte le tabelle in una sola chiamata)
+            repo.syncAllBatch(currentUtente)
 
             val local2 = repo.getLookupsFromDb(utenteId = currentUtente)
             val utcsLocal2 = repo.getUtcsFromDb(utenteId = currentUtente)

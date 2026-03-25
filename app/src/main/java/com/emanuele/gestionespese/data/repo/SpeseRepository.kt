@@ -114,12 +114,6 @@ class SpeseRepository(
         val tipologiaTipoMap = buildTipologiaTipoMap(tipiRawList)
         val utcEntities      = (data.utcs ?: emptyList()).toUtcEntities(tipologiaTipoMap)
 
-        if (tipiList.isEmpty() && categorieList.isEmpty() && contiList.isEmpty()) {
-            // Risposta batch vuota → fallback
-            syncAll(utente)
-            return
-        }
-
         // ── Scrittura su Room ─────────────────────────────────────────────
         lookupDao.clearTipi()
         lookupDao.upsertTipi(tipiList)
