@@ -46,6 +46,8 @@ import com.emanuele.gestionespese.ui.components.widgets.*
 import com.emanuele.gestionespese.ui.components.widgets.saldoPerConto
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.theme.Danger
+import com.emanuele.gestionespese.ui.theme.ExpenseContainer
+import com.emanuele.gestionespese.ui.theme.IncomeContainer
 import com.emanuele.gestionespese.ui.viewmodel.DashboardViewModel
 import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
 import java.time.LocalDate
@@ -463,9 +465,9 @@ fun SummaryScreen(
                                     modifier  = Modifier.width(160.dp),
                                     shape     = RoundedCornerShape(16.dp),
                                     colors    = CardDefaults.elevatedCardColors(
-                                        containerColor = MaterialTheme.colorScheme.surface
+                                        containerColor = if (isPositive) IncomeContainer else ExpenseContainer
                                     ),
-                                    elevation = CardDefaults.elevatedCardElevation(3.dp)
+                                    elevation = CardDefaults.elevatedCardElevation(2.dp)
                                 ) {
                                     Column(
                                         modifier = Modifier.padding(14.dp),

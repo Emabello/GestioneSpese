@@ -60,7 +60,7 @@ class SpeseRepository(
      */
     suspend fun syncSpese(utente: String) {
         val response = api.getSpese(utente = utente)
-        if (response.error != null) throw IllegalStateException(response.error)
+        if (!response.error.isNullOrBlank()) throw IllegalStateException(response.error)
         val remoteList = response.data ?: return   // dati nulli → non cancellare la cache locale
         val entities = remoteList.map { it.toEntity(utente) }
         spesaDao.clearByUtente(utente)
@@ -175,7 +175,7 @@ class SpeseRepository(
                 )
             )
         )
-        if (res.error != null) throw IllegalStateException(res.error)
+        if (!res.error.isNullOrBlank()) throw IllegalStateException(res.error)
         syncSpese(utente)
     }
 
@@ -216,7 +216,7 @@ class SpeseRepository(
                 )
             )
         )
-        if (res.error != null) throw IllegalStateException(res.error)
+        if (!res.error.isNullOrBlank()) throw IllegalStateException(res.error)
         syncSpese(utente)
     }
 
@@ -229,7 +229,7 @@ class SpeseRepository(
      */
     suspend fun delete(id: Int, utente: String) {
         val res = api.deleteSpesa(DeleteRequest(resource = "spese", id = id))
-        if (res.error != null) throw IllegalStateException(res.error)
+        if (!res.error.isNullOrBlank()) throw IllegalStateException(res.error)
         spesaDao.deleteById(id)
     }
 

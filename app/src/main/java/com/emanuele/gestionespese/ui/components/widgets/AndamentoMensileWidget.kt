@@ -2,12 +2,13 @@
  * AndamentoMensileWidget.kt
  *
  * Widget della dashboard che mostra un grafico a barre dell'andamento delle uscite
- * negli ultimi 6 mesi. La barra del mese corrente è evidenziata.
+ * negli ultimi 6 mesi. La barra del mese corrente è evidenziata con etichetta valore.
  */
 package com.emanuele.gestionespese.ui.components.widgets
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -17,6 +18,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.data.model.WidgetConfig
@@ -50,36 +52,63 @@ fun AndamentoMensileWidget(
                 } catch (e: Exception) { false }
             }.sumOf { it.importo }
             MonthData(
-                label = month.format(fmt).replaceFirstChar { it.uppercase() },
-                uscite = uscite,
+                label     = month.format(fmt).replaceFirstChar { it.uppercase() },
+                uscite    = uscite,
                 isCurrent = offset == 0
             )
         }
     }
 
-    val maxVal = remember(months) { months.maxOfOrNull { it.uscite } ?: 1.0 }
-
+    val maxVal      = remember(months) { months.maxOfOrNull { it.uscite }?.takeIf { it > 0 } ?: 1.0 }
+    val currentMonth = months.lastOrNull()
     val barColor    = Danger
-    val barColorDim = Danger.copy(alpha = 0.4f)
-    val labelColor  = MaterialTheme.colorScheme.onSurfaceVariant
+    val barColorDim = Danger.copy(alpha = 0.30f)
 
     WidgetCard(title = "Andamento mensile (uscite)", modifier = modifier) {
+        // Header con totale mese corrente
+        if (currentMonth != null) {
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment     = Alignment.CenterVertically
+            ) {
+                Text(
+                    text       = String.format(Locale.getDefault(), "%.2f €", currentMonth.uscite),
+                    style      = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color      = Danger
+                )
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = Danger.copy(alpha = 0.10f)
+                ) {
+                    Text(
+                        text     = currentMonth.label,
+                        style    = MaterialTheme.typography.labelSmall,
+                        color    = Danger,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(100.dp)
+                .height(90.dp)
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val barCount   = months.size
                 val spacing    = 6.dp.toPx()
                 val totalSpace = (barCount - 1) * spacing
                 val barWidth   = (size.width - totalSpace) / barCount
-                val maxHeight  = size.height * 0.85f
+                val maxHeight  = size.height * 0.90f
 
                 months.forEachIndexed { i, m ->
-                    val barH = if (maxVal > 0) (m.uscite / maxVal * maxHeight).toFloat() else 0f
+                    val barH = (m.uscite / maxVal * maxHeight).toFloat().coerceAtLeast(2f)
                     val x    = i * (barWidth + spacing)
-                    val y    = size.height - barH - 16.dp.toPx()
+                    val y    = size.height - barH
 
                     drawRoundRect(
                         color        = if (m.isCurrent) barColor else barColorDim,
@@ -90,29 +119,21 @@ fun AndamentoMensileWidget(
                 }
             }
         }
+
         // Etichette mesi
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier              = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             months.forEach { m ->
                 Text(
                     text  = m.label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (m.isCurrent) MaterialTheme.colorScheme.primary
-                            else             MaterialTheme.colorScheme.onSurfaceVariant
+                    fontWeight = if (m.isCurrent) FontWeight.Bold else FontWeight.Normal,
+                    color = if (m.isCurrent) Danger
+                            else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
-        Spacer(Modifier.height(4.dp))
-        // Totale mese corrente
-        val currentMonth = months.lastOrNull()
-        if (currentMonth != null) {
-            Text(
-                text  = "Mese corrente: ${String.format(Locale.getDefault(), "%.2f", currentMonth.uscite)} €",
-                style = MaterialTheme.typography.bodySmall,
-                color = Danger
-            )
         }
     }
 }
