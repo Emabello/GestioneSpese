@@ -28,6 +28,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -515,7 +519,7 @@ fun SummaryScreen(
                                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                                         ) {
                                             Icon(
-                                                imageVector = if (isPositive) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
+                                                imageVector = if (isPositive) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown,
                                                 contentDescription = null,
                                                 tint = if (isPositive) Brand else Danger,
                                                 modifier = Modifier.size(14.dp)
@@ -556,7 +560,7 @@ fun SummaryScreen(
                             selectedYear  = d.year
                             selectedMonth = d.monthValue
                         }) {
-                            Icon(Icons.Default.KeyboardArrowLeft,
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                                 contentDescription = "Mese precedente",
                                 tint = Brand)
                         }
@@ -587,7 +591,7 @@ fun SummaryScreen(
                             enabled = LocalDate.of(selectedYear, selectedMonth, 1)
                                 .isBefore(today.withDayOfMonth(1))
                         ) {
-                            Icon(Icons.Default.KeyboardArrowRight,
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                 contentDescription = "Mese successivo",
                                 tint = if (LocalDate.of(selectedYear, selectedMonth, 1)
                                         .isBefore(today.withDayOfMonth(1)))

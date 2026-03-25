@@ -88,7 +88,7 @@ class MyApp : Application() {
                 MIGRATION_15_16,
                 MIGRATION_16_17
             )
-            .fallbackToDestructiveMigrationOnDowngrade()
+            .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
             .build()
 
         // Ripristina profili bancari dal backup (se il DB è stato ricreato) e seed Webank

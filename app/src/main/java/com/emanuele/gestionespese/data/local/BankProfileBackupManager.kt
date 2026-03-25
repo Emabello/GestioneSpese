@@ -68,9 +68,9 @@ class BankProfileBackupManager(context: Context) {
                     packageName    = obj.optString("packageName", ""),
                     isActive       = obj.optBoolean("isActive", true),
                     contentSource  = obj.optString("contentSource", "TEXT_OR_BIG"),
-                    wizardSampleText = obj.optString("wizardSampleText", null)
+                    wizardSampleText = (obj.optString("wizardSampleText") ?: "")
                         .takeIf { it != "null" && it.isNotBlank() },
-                    wizardSelections = obj.optString("wizardSelections", null)
+                    wizardSelections = (obj.optString("wizardSelections") ?: "")
                         .takeIf { it != "null" && it.isNotBlank() }
                 )
             )

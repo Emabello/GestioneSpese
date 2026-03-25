@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -214,7 +215,7 @@ fun SettingsScreen(
     if (showLogoutConfirm) {
         AlertDialog(
             onDismissRequest = { showLogoutConfirm = false },
-            icon  = { Icon(Icons.Default.Logout, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            icon  = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
             title = { Text("Esci dall'account?") },
             text  = { Text("Verranno rimossi tutti i dati di sessione, l'impronta digitale e le credenziali salvate.") },
             confirmButton = {
@@ -840,7 +841,7 @@ fun SettingsScreen(
                 colors    = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 SettingRow(
-                    icon           = Icons.Default.Logout,
+                    icon           = Icons.AutoMirrored.Filled.Logout,
                     iconTint       = MaterialTheme.colorScheme.error,
                     iconBackground = MaterialTheme.colorScheme.errorContainer,
                     title          = "Esci dall'account",
