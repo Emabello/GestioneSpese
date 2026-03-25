@@ -17,10 +17,12 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -33,8 +35,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.ui.components.widgets.*
 import com.emanuele.gestionespese.ui.components.widgets.saldoPerConto
@@ -42,11 +48,51 @@ import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.theme.Danger
 import com.emanuele.gestionespese.ui.viewmodel.DashboardViewModel
 import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+// ── Drag & Drop nativo senza librerie esterne ─────────────────────────────
+@Stable
+private class DragDropState(
+    val items: SnapshotStateList<WidgetConfig>,
+    val onSave: (List<WidgetConfig>) -> Unit
+) {
+    var draggedIndex by mutableStateOf<Int?>(null)
+    var dragOffsetY  by mutableFloatStateOf(0f)
+    private var itemHeightPx = 0f
+
+    fun setItemHeight(px: Float) { if (px > 0f) itemHeightPx = px }
+
+    fun onDragStart(index: Int) {
+        draggedIndex = index
+        dragOffsetY  = 0f
+    }
+
+    fun onDrag(deltaY: Float) {
+        val idx = draggedIndex ?: return
+        dragOffsetY += deltaY
+        val threshold = if (itemHeightPx > 0f) itemHeightPx * 0.5f else 80f
+        when {
+            dragOffsetY > threshold && idx < items.size - 1 -> {
+                items.add(idx + 1, items.removeAt(idx))
+                draggedIndex = idx + 1
+                dragOffsetY -= (if (itemHeightPx > 0f) itemHeightPx else threshold * 2)
+            }
+            dragOffsetY < -threshold && idx > 0 -> {
+                items.add(idx - 1, items.removeAt(idx))
+                draggedIndex = idx - 1
+                dragOffsetY += (if (itemHeightPx > 0f) itemHeightPx else threshold * 2)
+            }
+        }
+    }
+
+    fun onDragEnd() {
+        onSave(items.toList())
+        draggedIndex = null
+        dragOffsetY  = 0f
+    }
+}
 
 // Raggruppa i widget in righe: WIDE da soli, SMALL a coppie
 private fun groupWidgets(widgets: List<WidgetConfig>): List<List<WidgetConfig>> {
@@ -301,9 +347,12 @@ fun SummaryScreen(
             }
         }
 
-        val listState = rememberLazyListState()
-        val reorderState = rememberReorderableLazyListState(listState) { from, to ->
-            widgetList.apply { add(to.index - 2, removeAt(from.index - 2)) }
+        val listState    = rememberLazyListState()
+        val dragDropState = remember(widgetList) {
+            DragDropState(widgetList) { ordered ->
+                val reindexed = ordered.mapIndexed { i, w -> w.copy(position = i) }
+                dashVm.saveLayout(reindexed)
+            }
         }
 
         // Saldi cumulativi per conto (calcolati su TUTTI i movimenti)
@@ -540,8 +589,8 @@ fun SummaryScreen(
                 }
             }
 
-            // ── Widget rows (con drag & drop in edit mode) ─────────────
-            if (rows.isEmpty()) {
+            // ── Widget rows ───────────────────────────────────────────
+            if (widgetList.isEmpty() && !editMode) {
                 item(key = "empty") {
                     ElevatedCard(
                         modifier = Modifier.fillMaxWidth(),
@@ -568,60 +617,63 @@ fun SummaryScreen(
                         }
                     }
                 }
+            } else if (editMode) {
+                // Edit mode: lista flat con drag & drop nativo (un widget per riga)
+                itemsIndexed(
+                    items = widgetList,
+                    key   = { _, w -> w.id }
+                ) { index, widget ->
+                    val isDragging = dragDropState.draggedIndex == index
+                    EditableWidgetWrapper(
+                        config      = widget,
+                        editMode    = true,
+                        isDragging  = isDragging,
+                        onDragStart = { dragDropState.onDragStart(index) },
+                        onDragDelta = { dragDropState.onDrag(it) },
+                        onDragEnd   = { dragDropState.onDragEnd() },
+                        onDelete    = { dashVm.removeWidget(widget.id) },
+                        onResize    = { dashVm.toggleSize(widget.id) },
+                        onConfigure = { configuringWidget = widget },
+                        modifier    = Modifier
+                            .fillMaxWidth()
+                            .zIndex(if (isDragging) 1f else 0f)
+                            .graphicsLayer {
+                                translationY  = if (isDragging) dragDropState.dragOffsetY else 0f
+                                shadowElevation = if (isDragging) 32f else 0f
+                                scaleX = if (isDragging) 1.02f else 1f
+                                scaleY = if (isDragging) 1.02f else 1f
+                            }
+                            .onSizeChanged { dragDropState.setItemHeight(it.height.toFloat()) }
+                    ) {
+                        WidgetRenderer(
+                            config   = widget,
+                            spese    = if (widget.type == WidgetType.SALDO_CONTO)
+                                state.spese else speseFiltered,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
             } else {
+                // View mode: gruppi di righe (WIDE da soli, SMALL a coppie)
                 items(
                     items = rows,
                     key   = { row -> row.joinToString("_") { it.id } }
                 ) { row ->
-                    if (editMode) {
-                        // In edit mode: drag handle, config e delete visibili
-                        if (row.size == 2) {
-                            Row(
-                                modifier              = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                row.forEach { widget ->
-                                    ReorderableItem(
-                                        state    = reorderState,
-                                        key      = widget.id,
-                                        modifier = Modifier.weight(1f)
-                                    ) { isDragging ->
-                                        EditableWidgetWrapper(
-                                            config         = widget,
-                                            editMode       = true,
-                                            isDragging     = isDragging,
-                                            reorderState   = reorderState,
-                                            onDelete       = { dashVm.removeWidget(widget.id) },
-                                            onResize       = { dashVm.toggleSize(widget.id) },
-                                            onConfigure    = { configuringWidget = widget },
-                                            modifier       = Modifier.fillMaxWidth()
-                                        ) {
-                                            WidgetRenderer(
-                                                config   = widget,
-                                                spese    = if (widget.type == WidgetType.SALDO_CONTO)
-                                                    state.spese else speseFiltered,
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            val widget = row.first()
-                            ReorderableItem(
-                                state    = reorderState,
-                                key      = widget.id,
-                                modifier = Modifier.fillMaxWidth()
-                            ) { isDragging ->
+                    if (row.size == 2) {
+                        Row(
+                            modifier              = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            row.forEach { widget ->
                                 EditableWidgetWrapper(
-                                    config         = widget,
-                                    editMode       = true,
-                                    isDragging     = isDragging,
-                                    reorderState   = reorderState,
-                                    onDelete       = { dashVm.removeWidget(widget.id) },
-                                    onResize       = { dashVm.toggleSize(widget.id) },
-                                    onConfigure    = { configuringWidget = widget },
-                                    modifier       = Modifier.fillMaxWidth()
+                                    config      = widget,
+                                    editMode    = false,
+                                    isDragging  = false,
+                                    onLongPress = { editMode = true },
+                                    onDelete    = { },
+                                    onResize    = { },
+                                    onConfigure = { },
+                                    modifier    = Modifier.weight(1f)
                                 ) {
                                     WidgetRenderer(
                                         config   = widget,
@@ -633,62 +685,23 @@ fun SummaryScreen(
                             }
                         }
                     } else {
-                        // View mode normale: long-press per entrare in edit
-                        if (row.size == 2) {
-                            Row(
-                                modifier              = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                row.forEach { widget ->
-                                    EditableWidgetWrapper(
-                                        config         = widget,
-                                        editMode       = false,
-                                        isDragging     = false,
-                                        reorderState   = reorderState,
-                                        onDelete       = { },
-                                        onResize       = { },
-                                        onConfigure    = { },
-                                        onLongPress    = { editMode = true },
-                                        modifier       = Modifier.weight(1f)
-                                    ) {
-                                        WidgetRenderer(
-                                            config   = widget,
-                                            spese    = if (widget.type == WidgetType.SALDO_CONTO)
-                                                state.spese else speseFiltered,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
-                            val widget = row.first()
-                            EditableWidgetWrapper(
-                                config         = widget,
-                                editMode       = false,
-                                isDragging     = false,
-                                reorderState   = reorderState,
-                                onDelete       = { },
-                                onResize       = { },
-                                onConfigure    = { },
-                                onLongPress    = { editMode = true },
-                                modifier       = Modifier.fillMaxWidth()
-                            ) {
-                                WidgetRenderer(
-                                    config   = widget,
-                                    spese    = if (widget.type == WidgetType.SALDO_CONTO)
-                                        state.spese else speseFiltered,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Salva l'ordine dopo drag
-                if (editMode) {
-                    item(key = "save_order") {
-                        LaunchedEffect(widgetList.toList()) {
-                            dashVm.saveLayout(widgetList)
+                        val widget = row.first()
+                        EditableWidgetWrapper(
+                            config      = widget,
+                            editMode    = false,
+                            isDragging  = false,
+                            onLongPress = { editMode = true },
+                            onDelete    = { },
+                            onResize    = { },
+                            onConfigure = { },
+                            modifier    = Modifier.fillMaxWidth()
+                        ) {
+                            WidgetRenderer(
+                                config   = widget,
+                                spese    = if (widget.type == WidgetType.SALDO_CONTO)
+                                    state.spese else speseFiltered,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
@@ -799,7 +812,9 @@ private fun EditableWidgetWrapper(
     config: WidgetConfig,
     editMode: Boolean,
     isDragging: Boolean,
-    reorderState: sh.calvin.reorderable.ReorderableLazyListState,
+    onDragStart: () -> Unit = {},
+    onDragDelta: (Float) -> Unit = {},
+    onDragEnd: () -> Unit = {},
     onDelete: () -> Unit,
     onResize: () -> Unit,
     onConfigure: () -> Unit,
@@ -835,9 +850,17 @@ private fun EditableWidgetWrapper(
                         .size(28.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .then(
-                            Modifier.reorderableItemDragHandle(reorderState, config.id)
-                        ),
+                        .pointerInput(Unit) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart  = { onDragStart() },
+                                onDragEnd    = { onDragEnd() },
+                                onDragCancel = { onDragEnd() },
+                                onDrag       = { change, dragAmount ->
+                                    change.consume()
+                                    onDragDelta(dragAmount.y)
+                                }
+                            )
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -920,12 +943,3 @@ private fun EditableWidgetWrapper(
     }
 }
 
-// Extension per il drag handle della reorderable library
-private fun Modifier.reorderableItemDragHandle(
-    state: sh.calvin.reorderable.ReorderableLazyListState,
-    key: String
-): Modifier = this.then(
-    with(state) {
-        Modifier.draggableHandle()
-    }
-)
