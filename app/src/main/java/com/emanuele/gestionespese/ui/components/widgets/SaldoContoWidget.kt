@@ -24,8 +24,8 @@ import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.data.model.WidgetConfig
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.theme.Danger
-import com.emanuele.gestionespese.ui.theme.ExpenseContainer
-import com.emanuele.gestionespese.ui.theme.IncomeContainer
+import com.emanuele.gestionespese.ui.theme.expenseContainer
+import com.emanuele.gestionespese.ui.theme.incomeContainer
 import java.util.Locale
 
 @Composable
@@ -58,7 +58,7 @@ fun SaldoContoWidget(
     WidgetCard(
         title     = "Saldo conto",
         modifier  = modifier,
-        cardColor = if (isPositive) IncomeContainer else ExpenseContainer
+        cardColor = if (isPositive) MaterialTheme.incomeContainer else MaterialTheme.expenseContainer
     ) {
         Row(
             verticalAlignment     = Alignment.CenterVertically,

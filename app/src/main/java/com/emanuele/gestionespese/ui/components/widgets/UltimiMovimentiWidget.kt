@@ -29,8 +29,10 @@ fun UltimiMovimentiWidget(
     spese: List<SpesaView>,
     modifier: Modifier = Modifier
 ) {
-    val ultimi = remember(spese, config.topN) {
-        spese.sortedByDescending { it.data }.take(config.topN)
+    val ultimi = remember(spese, config.topN, config.periodo) {
+        spese.filteredByPeriodo(config.periodo)
+            .sortedByDescending { it.data }
+            .take(config.topN)
     }
 
     WidgetCard(title = "Ultimi ${config.topN} movimenti", modifier = modifier) {

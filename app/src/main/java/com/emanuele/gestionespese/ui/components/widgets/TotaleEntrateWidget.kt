@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.data.model.WidgetConfig
 import com.emanuele.gestionespese.ui.theme.Brand
-import com.emanuele.gestionespese.ui.theme.IncomeContainer
+import com.emanuele.gestionespese.ui.theme.incomeContainer
 import java.util.Locale
 
 @Composable
@@ -28,14 +28,15 @@ fun TotaleEntrateWidget(
     spese: List<SpesaView>,
     modifier: Modifier = Modifier
 ) {
-    val totale = remember(spese) {
-        spese.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo }
+    val filtered = remember(spese, config.periodo) { spese.filteredByPeriodo(config.periodo) }
+    val totale   = remember(filtered) {
+        filtered.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo }
     }
 
     WidgetCard(
         title     = "Entrate",
         modifier  = modifier,
-        cardColor = IncomeContainer
+        cardColor = MaterialTheme.incomeContainer
     ) {
         Row(
             modifier              = Modifier.fillMaxWidth(),

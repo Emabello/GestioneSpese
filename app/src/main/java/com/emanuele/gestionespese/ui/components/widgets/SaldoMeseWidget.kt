@@ -22,8 +22,8 @@ import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.data.model.WidgetConfig
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.theme.Danger
-import com.emanuele.gestionespese.ui.theme.ExpenseContainer
-import com.emanuele.gestionespese.ui.theme.IncomeContainer
+import com.emanuele.gestionespese.ui.theme.expenseContainer
+import com.emanuele.gestionespese.ui.theme.incomeContainer
 import java.util.Locale
 
 @Composable
@@ -32,15 +32,16 @@ fun SaldoMeseWidget(
     spese: List<SpesaView>,
     modifier: Modifier = Modifier
 ) {
-    val entrate   = remember(spese) { spese.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo } }
-    val uscite    = remember(spese) { spese.filter { it.isUscita()  && !it.isTransfer() }.sumOf { it.importo } }
-    val saldo     = entrate - uscite
+    val filtered   = remember(spese, config.periodo) { spese.filteredByPeriodo(config.periodo) }
+    val entrate    = remember(filtered) { filtered.filter { it.isEntrata() }.sumOf { it.importo } }
+    val uscite     = remember(filtered) { filtered.filter { it.isUscita() }.sumOf { it.importo } }
+    val saldo      = entrate - uscite
     val isPositive = saldo >= 0
 
     WidgetCard(
         title     = "Saldo ${config.periodo.label()}",
         modifier  = modifier,
-        cardColor = if (isPositive) IncomeContainer else ExpenseContainer
+        cardColor = if (isPositive) MaterialTheme.incomeContainer else MaterialTheme.expenseContainer
     ) {
         Row(
             modifier              = Modifier.fillMaxWidth(),
