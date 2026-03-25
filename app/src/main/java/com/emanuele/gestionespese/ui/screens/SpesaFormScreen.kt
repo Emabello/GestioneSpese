@@ -224,13 +224,15 @@ fun SpesaFormScreen(
         state.conti.map { it.trim() }.filter { it.isNotBlank() }.distinct().sorted()
     }
 
-    // Determina se il tipo selezionato è un trasferimento tra conti
-    val isTransferType = remember(tipo, state.utcs) {
-        val tipoMovimento = state.utcs.firstOrNull {
+    // Deriva il tipo_movimento (es. "uscita", "entrata", "trasferimento") dall'UTC selezionato
+    val tipoMovimento = remember(tipo, state.utcs) {
+        state.utcs.firstOrNull {
             it.tipologia.trim().equals(tipo.trim(), ignoreCase = true)
-        }?.tipoMovimento
-        tipoMovimento?.equals("trasferimento", ignoreCase = true) == true
+        }?.tipoMovimento ?: "uscita"
     }
+
+    // Determina se il tipo selezionato è un trasferimento tra conti
+    val isTransferType = tipoMovimento.equals("trasferimento", ignoreCase = true)
 
     // Opzioni conto destinazione: tutti i conti escluso quello origine
     val contiDestinazioneOptions = remember(contiOptions, conto) {
@@ -350,6 +352,7 @@ fun SpesaFormScreen(
                                     data              = data,
                                     importo           = importoValue ?: 0.0,
                                     tipo              = tipo,
+                                    tipoMovimento     = tipoMovimento,
                                     conto             = conto,
                                     contoDestinazione = contoDestinazione.trim().ifBlank { null },
                                     descrizione       = note.trim().ifBlank { null },

@@ -22,7 +22,11 @@ enum class WidgetType {
     /** Lista degli ultimi movimenti registrati. */
     ULTIMI_MOVIMENTI,
     /** Classifica delle categorie per importo speso. */
-    TOP_CATEGORIE
+    TOP_CATEGORIE,
+    /** Saldo di uno specifico conto (tutti i tempi). */
+    SALDO_CONTO,
+    /** Grafico a barre dell'andamento mensile (ultimi 6 mesi). */
+    ANDAMENTO_MENSILE
 }
 
 /** Dimensione del widget nella griglia della dashboard (2 colonne). */
@@ -46,13 +50,15 @@ enum class WidgetPeriodo {
 /**
  * Configurazione di un singolo widget nella dashboard.
  *
- * @property id       Identificativo UUID univoco del widget.
- * @property type     Tipo di contenuto ([WidgetType]).
- * @property size     Dimensione nella griglia ([WidgetSize]).
- * @property position Ordine di visualizzazione (0 = primo in alto).
- * @property periodo  Intervallo temporale per i calcoli ([WidgetPeriodo]).
- * @property topN     Numero massimo di elementi per [WidgetType.TOP_CATEGORIE]
- *                    e [WidgetType.ULTIMI_MOVIMENTI].
+ * @property id          Identificativo UUID univoco del widget.
+ * @property type        Tipo di contenuto ([WidgetType]).
+ * @property size        Dimensione nella griglia ([WidgetSize]).
+ * @property position    Ordine di visualizzazione (0 = primo in alto).
+ * @property periodo     Intervallo temporale per i calcoli ([WidgetPeriodo]).
+ * @property topN        Numero massimo di elementi per [WidgetType.TOP_CATEGORIE]
+ *                       e [WidgetType.ULTIMI_MOVIMENTI].
+ * @property contoFilter Filtro per conto specifico (usato da [WidgetType.SALDO_CONTO]).
+ *                       `null` = mostra tutti i conti / usa il primo disponibile.
  */
 data class WidgetConfig(
     val id: String = UUID.randomUUID().toString(),
@@ -60,14 +66,15 @@ data class WidgetConfig(
     val size: WidgetSize = WidgetSize.WIDE,
     val position: Int = 0,
     val periodo: WidgetPeriodo = WidgetPeriodo.MESE_CORRENTE,
-    val topN: Int = 5
+    val topN: Int = 5,
+    val contoFilter: String? = null
 )
 
 /**
  * Layout di default applicato quando l'utente non ha ancora personalizzato
  * la propria dashboard.
  *
- * @return Lista ordinata di [WidgetConfig] con i 6 widget principali.
+ * @return Lista ordinata di [WidgetConfig] con i widget principali.
  */
 fun defaultDashboardLayout(): List<WidgetConfig> = listOf(
     WidgetConfig(type = WidgetType.SALDO_MESE,         size = WidgetSize.WIDE,  position = 0),

@@ -52,6 +52,7 @@ data class SpesaPatch(
     val conto_destinazione: String? = null,
     val importo: Double? = null,
     val tipo: String? = null,
+    val tipo_movimento: String? = null,
     val categoria: String? = null,
     val sottocategoria: String? = null,
     val descrizione: String? = null

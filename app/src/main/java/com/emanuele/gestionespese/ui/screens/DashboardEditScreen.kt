@@ -14,14 +14,12 @@ package com.emanuele.gestionespese.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.ui.components.widgets.label
@@ -159,19 +157,34 @@ fun DashboardEditScreen(
 }
 
 fun WidgetType.displayName(): String = when (this) {
-    WidgetType.TOTALE_USCITE    -> "Totale uscite"
-    WidgetType.TOTALE_ENTRATE   -> "Totale entrate"
-    WidgetType.SALDO_MESE       -> "Saldo mese"
-    WidgetType.GRAFICO_TORTA    -> "Grafico torta"
-    WidgetType.ULTIMI_MOVIMENTI -> "Ultimi movimenti"
-    WidgetType.TOP_CATEGORIE    -> "Top categorie"
+    WidgetType.TOTALE_USCITE     -> "Totale uscite"
+    WidgetType.TOTALE_ENTRATE    -> "Totale entrate"
+    WidgetType.SALDO_MESE        -> "Saldo mese"
+    WidgetType.GRAFICO_TORTA     -> "Grafico torta"
+    WidgetType.ULTIMI_MOVIMENTI  -> "Ultimi movimenti"
+    WidgetType.TOP_CATEGORIE     -> "Top categorie"
+    WidgetType.SALDO_CONTO       -> "Saldo conto"
+    WidgetType.ANDAMENTO_MENSILE -> "Andamento mensile"
 }
 
 fun WidgetType.description(): String = when (this) {
-    WidgetType.TOTALE_USCITE    -> "Totale uscite del periodo selezionato"
-    WidgetType.TOTALE_ENTRATE   -> "Totale entrate del periodo selezionato"
-    WidgetType.SALDO_MESE       -> "Differenza entrate - uscite"
-    WidgetType.GRAFICO_TORTA    -> "Distribuzione spese per categoria"
-    WidgetType.ULTIMI_MOVIMENTI -> "Gli ultimi N movimenti inseriti"
-    WidgetType.TOP_CATEGORIE    -> "Le categorie con più spese"
+    WidgetType.TOTALE_USCITE     -> "Totale uscite del periodo selezionato"
+    WidgetType.TOTALE_ENTRATE    -> "Totale entrate del periodo selezionato"
+    WidgetType.SALDO_MESE        -> "Differenza entrate - uscite"
+    WidgetType.GRAFICO_TORTA     -> "Distribuzione spese per categoria"
+    WidgetType.ULTIMI_MOVIMENTI  -> "Gli ultimi N movimenti inseriti"
+    WidgetType.TOP_CATEGORIE     -> "Le categorie con più spese"
+    WidgetType.SALDO_CONTO       -> "Saldo cumulativo di un conto specifico"
+    WidgetType.ANDAMENTO_MENSILE -> "Grafico uscite degli ultimi 6 mesi"
+}
+
+fun WidgetType.icon(): ImageVector = when (this) {
+    WidgetType.TOTALE_USCITE     -> Icons.Default.TrendingDown
+    WidgetType.TOTALE_ENTRATE    -> Icons.Default.TrendingUp
+    WidgetType.SALDO_MESE        -> Icons.Default.AccountBalance
+    WidgetType.GRAFICO_TORTA     -> Icons.Default.PieChart
+    WidgetType.ULTIMI_MOVIMENTI  -> Icons.Default.List
+    WidgetType.TOP_CATEGORIE     -> Icons.Default.BarChart
+    WidgetType.SALDO_CONTO       -> Icons.Default.Savings
+    WidgetType.ANDAMENTO_MENSILE -> Icons.Default.BarChart
 }

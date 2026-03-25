@@ -49,12 +49,21 @@ class DashboardViewModel(
         loadLayout()
     }
 
-    /** Carica il layout dal repository e aggiorna lo stato. */
+    /** Carica il layout dal repository (Room) e poi sincronizza dal remoto. */
     fun loadLayout() {
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true) }
-            val widgets = repo.getLayout(utente)
-            _state.update { it.copy(widgets = widgets, isLoading = false) }
+            // Carica subito da Room
+            val local = repo.getLayout(utente)
+            _state.update { it.copy(widgets = local, isLoading = false) }
+            // Poi allinea dal server (aggiorna se il server ha una versione più recente)
+            if (utente.isNotBlank()) {
+                runCatching { repo.syncFromRemote(utente) }
+                    .onSuccess {
+                        val fresh = repo.getLayout(utente)
+                        _state.update { it.copy(widgets = fresh) }
+                    }
+            }
         }
     }
 
@@ -140,6 +149,18 @@ class DashboardViewModel(
                 size = if (w.size == WidgetSize.WIDE) WidgetSize.SMALL else WidgetSize.WIDE
             ) else w
         }
+        saveLayout(updated)
+    }
+
+    /**
+     * Aggiorna la configurazione di un widget specifico (periodo, topN, contoFilter, ecc.)
+     * e persiste il layout aggiornato.
+     *
+     * @param id     ID del widget da aggiornare.
+     * @param config Nuova configurazione da applicare al widget.
+     */
+    fun updateWidgetConfig(id: String, config: WidgetConfig) {
+        val updated = _state.value.widgets.map { w -> if (w.id == id) config else w }
         saveLayout(updated)
     }
 }

@@ -59,7 +59,9 @@ class SpeseRepository(
      * @param utente ID dell'utente.
      */
     suspend fun syncSpese(utente: String) {
-        val remoteList = api.getSpese(utente = utente).data ?: emptyList()
+        val response = api.getSpese(utente = utente)
+        if (response.error != null) throw IllegalStateException(response.error)
+        val remoteList = response.data ?: return   // dati nulli → non cancellare la cache locale
         val entities = remoteList.map { it.toEntity(utente) }
         spesaDao.clearByUtente(utente)
         spesaDao.upsertAll(entities)
@@ -150,6 +152,7 @@ class SpeseRepository(
         contoDestinazione: String? = null,
         importo: Double,
         tipo: String,
+        tipoMovimento: String? = null,
         categoria: String?,
         sottocategoria: String?,
         descrizione: String?
@@ -165,6 +168,7 @@ class SpeseRepository(
                     conto_destinazione = contoDestinazione,
                     importo = importo,
                     tipo = tipo,
+                    tipo_movimento = tipoMovimento,
                     categoria = categoria,
                     sottocategoria = sottocategoria,
                     descrizione = descrizione
@@ -189,6 +193,7 @@ class SpeseRepository(
         contoDestinazione: String? = null,
         importo: Double,
         tipo: String,
+        tipoMovimento: String? = null,
         categoria: String?,
         sottocategoria: String?,
         descrizione: String?
@@ -204,6 +209,7 @@ class SpeseRepository(
                     conto_destinazione = contoDestinazione,
                     importo = importo,
                     tipo = tipo,
+                    tipo_movimento = tipoMovimento,
                     categoria = categoria,
                     sottocategoria = sottocategoria,
                     descrizione = descrizione
