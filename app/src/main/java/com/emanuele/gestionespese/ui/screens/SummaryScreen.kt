@@ -28,6 +28,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,12 +44,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.ui.components.widgets.*
 import com.emanuele.gestionespese.ui.components.widgets.saldoPerConto
 import com.emanuele.gestionespese.ui.theme.Brand
+import com.emanuele.gestionespese.utils.InitialBalanceManager
 import com.emanuele.gestionespese.ui.theme.Danger
 import com.emanuele.gestionespese.ui.theme.ExpenseContainer
 import com.emanuele.gestionespese.ui.theme.IncomeContainer
@@ -358,9 +364,13 @@ fun SummaryScreen(
             }
         }
 
-        // Saldi cumulativi per conto (calcolati su TUTTI i movimenti)
+        // Saldi cumulativi per conto (calcolati su TUTTI i movimenti + saldo iniziale)
+        val summaryContext = LocalContext.current
         val contiSaldi = remember(state.spese, state.conti) {
-            state.conti.map { conto -> conto to state.spese.saldoPerConto(conto) }
+            state.conti.map { conto ->
+                val ib = InitialBalanceManager.getBalance(summaryContext, conto)
+                conto to state.spese.saldoPerConto(conto, ib)
+            }
         }
 
         // Saldo totale patrimonio
@@ -509,7 +519,7 @@ fun SummaryScreen(
                                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                                         ) {
                                             Icon(
-                                                imageVector = if (isPositive) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
+                                                imageVector = if (isPositive) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown,
                                                 contentDescription = null,
                                                 tint = if (isPositive) Brand else Danger,
                                                 modifier = Modifier.size(14.dp)
@@ -550,7 +560,7 @@ fun SummaryScreen(
                             selectedYear  = d.year
                             selectedMonth = d.monthValue
                         }) {
-                            Icon(Icons.Default.KeyboardArrowLeft,
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                                 contentDescription = "Mese precedente",
                                 tint = Brand)
                         }
@@ -581,7 +591,7 @@ fun SummaryScreen(
                             enabled = LocalDate.of(selectedYear, selectedMonth, 1)
                                 .isBefore(today.withDayOfMonth(1))
                         ) {
-                            Icon(Icons.Default.KeyboardArrowRight,
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                 contentDescription = "Mese successivo",
                                 tint = if (LocalDate.of(selectedYear, selectedMonth, 1)
                                         .isBefore(today.withDayOfMonth(1)))

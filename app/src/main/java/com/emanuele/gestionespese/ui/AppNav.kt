@@ -35,6 +35,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.emanuele.gestionespese.MyApp
+import com.emanuele.gestionespese.data.local.BankProfileBackupManager
 import com.emanuele.gestionespese.data.repo.BankProfileRepository
 import com.emanuele.gestionespese.data.repo.DashboardRepository
 import com.emanuele.gestionespese.data.repo.SpesaDraftRepository
@@ -107,7 +108,10 @@ fun AppNav(vm: SpeseViewModel) {
 
     val bankProfileVm: BankProfileViewModel = viewModel(
         factory = BankProfileViewModel.factory(
-            BankProfileRepository((context.applicationContext as MyApp).db.bankProfileDao())
+            BankProfileRepository(
+                (context.applicationContext as MyApp).db.bankProfileDao(),
+                BankProfileBackupManager(context.applicationContext)
+            )
         )
     )
 

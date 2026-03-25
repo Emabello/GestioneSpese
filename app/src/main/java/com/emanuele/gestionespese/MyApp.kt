@@ -17,6 +17,7 @@ import com.emanuele.gestionespese.data.local.MIGRATION_13_14
 import com.emanuele.gestionespese.data.local.MIGRATION_14_15
 import com.emanuele.gestionespese.data.local.MIGRATION_15_16
 import com.emanuele.gestionespese.data.local.MIGRATION_16_17
+import com.emanuele.gestionespese.data.local.BankProfileBackupManager
 import com.emanuele.gestionespese.data.local.WebankSeed
 import com.emanuele.gestionespese.data.remote.RetrofitProvider
 import com.emanuele.gestionespese.data.remote.SupabaseApi
@@ -87,15 +88,18 @@ class MyApp : Application() {
                 MIGRATION_15_16,
                 MIGRATION_16_17
             )
-            .fallbackToDestructiveMigrationOnDowngrade()
+            .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
             .build()
 
-        // Seed del profilo Webank (idempotente — non fa nulla se già presente)
+        // Ripristina profili bancari dal backup (se il DB è stato ricreato) e seed Webank
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                val backupMgr = BankProfileBackupManager(applicationContext)
+                backupMgr.restoreIfNeeded(db.bankProfileDao())
                 WebankSeed.seedIfNeeded(db.bankProfileDao())
+                backupMgr.backupAll(db.bankProfileDao())
             } catch (t: Throwable) {
-                DevLogger.log("SEED", "Errore seed Webank: ${t.message}")
+                DevLogger.log("SEED", "Errore restore/seed profili: ${t.message}")
             }
         }
 

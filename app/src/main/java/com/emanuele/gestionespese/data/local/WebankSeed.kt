@@ -16,7 +16,7 @@ object WebankSeed {
     private const val WEBANK_PKG = "com.opentecheng.android.webank"
 
     suspend fun seedIfNeeded(dao: BankProfileDao) {
-        val alreadyExists = dao.getActiveProfiles().any { it.packageName == WEBANK_PKG }
+        val alreadyExists = dao.getAllProfilesOnce().any { it.packageName == WEBANK_PKG }
         if (alreadyExists) return
 
         val profileId = dao.insertProfile(
