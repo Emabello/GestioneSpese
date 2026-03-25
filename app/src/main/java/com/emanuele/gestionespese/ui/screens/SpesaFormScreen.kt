@@ -523,23 +523,13 @@ fun SpesaFormScreen(
                     DropdownFieldString("Tipologia", tipo, tipiOptions,
                         editEnabled && !saving && !state.loadingLookups) { tipo = it }
 
-                    if (isTransferType) {
-                        // Trasferimento: mostra conto destinazione, nasconde categoria
-                        DropdownFieldString(
-                            label   = "Conto destinazione",
-                            value   = contoDestinazione,
-                            options = contiDestinazioneOptions,
-                            enabled = editEnabled && !saving && !state.loadingLookups && conto.isNotBlank()
-                        ) { contoDestinazione = it }
-                    } else {
-                        DropdownFieldString("Categoria", categoria, categorieOptions,
-                            editEnabled && !saving && !state.loadingLookups && tipo.isNotBlank()) { categoria = it }
+                    DropdownFieldString("Categoria", categoria, categorieOptions,
+                        editEnabled && !saving && !state.loadingLookups && tipo.isNotBlank()) { categoria = it }
 
-                        DropdownFieldString("Sottocategoria (opzionale)", sottocategoria,
-                            sottocategorieOptions,
-                            editEnabled && !saving && !state.loadingLookups && categoria.isNotBlank()
-                        ) { sottocategoria = it }
-                    }
+                    DropdownFieldString("Sottocategoria (opzionale)", sottocategoria,
+                        sottocategorieOptions,
+                        editEnabled && !saving && !state.loadingLookups && categoria.isNotBlank()
+                    ) { sottocategoria = it }
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
@@ -549,6 +539,15 @@ fun SpesaFormScreen(
 
                     DropdownFieldString("Conto", conto, contiOptions,
                         editEnabled && !saving && !state.loadingLookups) { conto = it }
+
+                    AnimatedVisibility(visible = isTransferType) {
+                        DropdownFieldString(
+                            label   = "Conto destinazione",
+                            value   = contoDestinazione,
+                            options = contiDestinazioneOptions,
+                            enabled = editEnabled && !saving && !state.loadingLookups && conto.isNotBlank()
+                        ) { contoDestinazione = it }
+                    }
 
                     OutlinedTextField(
                         value         = note,
