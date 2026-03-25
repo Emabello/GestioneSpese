@@ -34,6 +34,7 @@ data class SpesaEntity(
     val tipo: String,
     val tipoMovimento: String? = null,
     val conto: String?,
+    val contoDestinazione: String? = null,
     val categoria: String?,
     val sottocategoria: String?,
     val descrizione: String?,

@@ -43,6 +43,7 @@ import com.emanuele.gestionespese.ui.screens.BankProfileEditScreen
 import com.emanuele.gestionespese.ui.screens.BankProfileListScreen
 import com.emanuele.gestionespese.ui.screens.BankProfileWizardScreen
 import com.emanuele.gestionespese.ui.screens.ConfigScreen
+import com.emanuele.gestionespese.ui.screens.ContoDetailScreen
 import com.emanuele.gestionespese.ui.screens.DashboardEditScreen
 import com.emanuele.gestionespese.ui.screens.DraftsScreen
 import com.emanuele.gestionespese.ui.screens.HomeScreen
@@ -60,6 +61,7 @@ object Routes {
     const val FORM                = "form"
     const val DASHBOARD_EDIT      = "dashboard_edit"
     const val CONFIG              = "config"
+    const val CONTO_DETAIL        = "conto_detail"         // ?conto={conto}
     const val BANK_PROFILES       = "bank_profiles"
     const val BANK_PROFILE_EDIT   = "bank_profile_edit"    // ?profileId={profileId} — -1L = nuovo
     const val BANK_PROFILE_WIZARD = "bank_profile_wizard"  // ?profileId={profileId} — -1L = nuovo
@@ -127,7 +129,30 @@ fun AppNav(vm: SpeseViewModel) {
                 },
                 onEditDashboard          = { nav.navigate(Routes.DASHBOARD_EDIT) },
                 onNavigateToConfig       = { nav.navigate(Routes.CONFIG) },
-                onNavigateToBankProfiles = { nav.navigate(Routes.BANK_PROFILES) }
+                onNavigateToBankProfiles = { nav.navigate(Routes.BANK_PROFILES) },
+                onContoDetail            = { conto ->
+                    nav.navigate("${Routes.CONTO_DETAIL}?conto=${java.net.URLEncoder.encode(conto, "UTF-8")}")
+                }
+            )
+        }
+
+        composable(
+            route     = "${Routes.CONTO_DETAIL}?conto={conto}",
+            arguments = listOf(navArgument("conto") {
+                type         = NavType.StringType
+                defaultValue = ""
+            })
+        ) { backStackEntry ->
+            val conto = backStackEntry.arguments?.getString("conto")?.let {
+                java.net.URLDecoder.decode(it, "UTF-8")
+            } ?: ""
+            ContoDetailScreen(
+                vm           = vm,
+                conto        = conto,
+                onBack       = { nav.popBackStack() },
+                onEditSpesa  = { id ->
+                    nav.navigate("${Routes.FORM}?id=$id")
+                }
             )
         }
 
@@ -224,7 +249,8 @@ fun MainTabScreen(
     onNavigateToForm: (editId: Int?, draftId: Long?) -> Unit,
     onEditDashboard: () -> Unit,
     onNavigateToConfig: () -> Unit,
-    onNavigateToBankProfiles: () -> Unit
+    onNavigateToBankProfiles: () -> Unit,
+    onContoDetail: (String) -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -267,7 +293,8 @@ fun MainTabScreen(
                     vm              = vm,
                     dashVm          = dashVm,
                     onBack          = { },
-                    onEditDashboard = onEditDashboard
+                    onEditDashboard = onEditDashboard,
+                    onContoDetail   = onContoDetail
                 )
                 MainTab.HOME.ordinal     -> HomeScreen(
                     vm        = vm,

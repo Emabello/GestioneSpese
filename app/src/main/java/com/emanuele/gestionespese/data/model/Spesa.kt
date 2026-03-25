@@ -33,6 +33,7 @@ data class SpesaView(
     val utente: String? = null,
     val data: String? = null,
     val conto: String? = null,
+    val conto_destinazione: String? = null,
     val importo: Double = 0.0,
     val tipo: String? = null,
     val tipo_movimento: String? = null,
@@ -48,8 +49,10 @@ data class SpesaPatch(
     val utente: String? = null,
     val data: String? = null,
     val conto: String? = null,
+    val conto_destinazione: String? = null,
     val importo: Double? = null,
     val tipo: String? = null,
+    val tipo_movimento: String? = null,
     val categoria: String? = null,
     val sottocategoria: String? = null,
     val descrizione: String? = null

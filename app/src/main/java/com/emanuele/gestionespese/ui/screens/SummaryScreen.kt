@@ -5,42 +5,97 @@
  * Visualizza i widget configurati dall'utente in una griglia a 2 colonne,
  * ognuno calcolato sul periodo selezionato (mese corrente, ultimi 30 giorni, anno).
  *
- * I widget disponibili sono definiti in [WidgetConfig] e renderizzati da [WidgetRenderer].
- * La dashboard è modificabile dalla schermata [DashboardEditScreen].
+ * Funzionalità:
+ * - Card conti ridisegnate con saldo, trend, icone e click al dettaglio
+ * - Drag & drop per riordinare i widget (long-press handle in edit mode)
+ * - Bottone "⚙" per configurare ogni widget (periodo, topN, contoFilter)
+ * - Tasto "Modifica" nella TopAppBar per entrare in edit mode
  */
 package com.emanuele.gestionespese.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.OpenInFull
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.ui.components.widgets.*
+import com.emanuele.gestionespese.ui.components.widgets.saldoPerConto
 import com.emanuele.gestionespese.ui.theme.Brand
+import com.emanuele.gestionespese.ui.theme.Danger
+import com.emanuele.gestionespese.ui.theme.ExpenseContainer
+import com.emanuele.gestionespese.ui.theme.IncomeContainer
 import com.emanuele.gestionespese.ui.viewmodel.DashboardViewModel
 import com.emanuele.gestionespese.ui.viewmodel.SpeseViewModel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+// ── Drag & Drop nativo senza librerie esterne ─────────────────────────────
+@Stable
+private class DragDropState(
+    val items: SnapshotStateList<WidgetConfig>,
+    val onSave: (List<WidgetConfig>) -> Unit
+) {
+    var draggedIndex by mutableStateOf<Int?>(null)
+    var dragOffsetY  by mutableFloatStateOf(0f)
+    private var itemHeightPx = 0f
+
+    fun setItemHeight(px: Float) { if (px > 0f) itemHeightPx = px }
+
+    fun onDragStart(index: Int) {
+        draggedIndex = index
+        dragOffsetY  = 0f
+    }
+
+    fun onDrag(deltaY: Float) {
+        val idx = draggedIndex ?: return
+        dragOffsetY += deltaY
+        val threshold = if (itemHeightPx > 0f) itemHeightPx * 0.5f else 80f
+        when {
+            dragOffsetY > threshold && idx < items.size - 1 -> {
+                items.add(idx + 1, items.removeAt(idx))
+                draggedIndex = idx + 1
+                dragOffsetY -= (if (itemHeightPx > 0f) itemHeightPx else threshold * 2)
+            }
+            dragOffsetY < -threshold && idx > 0 -> {
+                items.add(idx - 1, items.removeAt(idx))
+                draggedIndex = idx - 1
+                dragOffsetY += (if (itemHeightPx > 0f) itemHeightPx else threshold * 2)
+            }
+        }
+    }
+
+    fun onDragEnd() {
+        onSave(items.toList())
+        draggedIndex = null
+        dragOffsetY  = 0f
+    }
+}
 
 // Raggruppa i widget in righe: WIDE da soli, SMALL a coppie
 private fun groupWidgets(widgets: List<WidgetConfig>): List<List<WidgetConfig>> {
@@ -71,13 +126,17 @@ fun SummaryScreen(
     vm: SpeseViewModel,
     dashVm: DashboardViewModel,
     onBack: () -> Unit,
-    onEditDashboard: () -> Unit
+    onEditDashboard: () -> Unit,
+    onContoDetail: (String) -> Unit = {}
 ) {
     val state     by vm.state.collectAsState()
     val dashState by dashVm.state.collectAsState()
 
     var editMode     by remember { mutableStateOf(false) }
     var showAddPopup by remember { mutableStateOf(false) }
+
+    // Widget da configurare
+    var configuringWidget by remember { mutableStateOf<WidgetConfig?>(null) }
 
     // ── Selettore mese ────────────────────────────────────────────────
     val today = remember { LocalDate.now() }
@@ -105,7 +164,8 @@ fun SummaryScreen(
             .replaceFirstChar { it.uppercase() }
     }
 
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState       = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val configSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // ── Popup aggiungi widget ─────────────────────────────────────────
     if (showAddPopup) {
@@ -151,7 +211,8 @@ fun SummaryScreen(
                                     WidgetConfig(
                                         type     = type,
                                         size     = if (type == WidgetType.TOTALE_USCITE ||
-                                            type == WidgetType.TOTALE_ENTRATE)
+                                            type == WidgetType.TOTALE_ENTRATE ||
+                                            type == WidgetType.SALDO_CONTO)
                                             WidgetSize.SMALL else WidgetSize.WIDE,
                                         position = dashState.widgets.size
                                     )
@@ -167,19 +228,30 @@ fun SummaryScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment     = Alignment.CenterVertically
                         ) {
-                            Column {
-                                Text(
-                                    type.displayName(),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = if (alreadyAdded)
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    else MaterialTheme.colorScheme.onSurface
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = type.icon(),
+                                    contentDescription = null,
+                                    tint = if (alreadyAdded) MaterialTheme.colorScheme.onSurfaceVariant else Brand,
+                                    modifier = Modifier.size(24.dp)
                                 )
-                                Text(
-                                    type.description(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Column {
+                                    Text(
+                                        type.displayName(),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = if (alreadyAdded)
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        type.description(),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                             if (alreadyAdded) {
                                 Text("Già aggiunto",
@@ -195,6 +267,20 @@ fun SummaryScreen(
         }
     }
 
+    // ── Sheet configurazione widget ───────────────────────────────────
+    configuringWidget?.let { cfg ->
+        WidgetConfigSheet(
+            config      = cfg,
+            conti       = state.conti,
+            onDismiss   = { configuringWidget = null },
+            onSave      = { updated ->
+                dashVm.updateWidgetConfig(cfg.id, updated)
+                configuringWidget = null
+            },
+            sheetState  = configSheetState
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -202,7 +288,7 @@ fun SummaryScreen(
                     Column {
                         Text("Riepilogo", style = MaterialTheme.typography.titleLarge)
                         Text(
-                            if (editMode) "Modalità modifica" else "Dashboard personale",
+                            if (editMode) "Modalità modifica — trascina per riordinare" else meseLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = if (editMode) Brand
                             else MaterialTheme.colorScheme.onSurfaceVariant
@@ -226,6 +312,17 @@ fun SummaryScreen(
                             }
                         }
                     }
+                    AnimatedVisibility(
+                        visible = !editMode,
+                        enter   = fadeIn(),
+                        exit    = fadeOut()
+                    ) {
+                        IconButton(onClick = { editMode = true }) {
+                            Icon(Icons.Default.Edit,
+                                contentDescription = "Modifica dashboard",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
@@ -242,21 +339,200 @@ fun SummaryScreen(
             return@Scaffold
         }
 
-        val rows = remember(dashState.widgets) {
-            groupWidgets(dashState.widgets.sortedBy { it.position })
+        // Lista dei widget per il drag & drop (flat list)
+        val widgetList = remember(dashState.widgets) {
+            dashState.widgets.sortedBy { it.position }.toMutableStateList()
+        }
+        LaunchedEffect(dashState.widgets) {
+            if (!editMode) {
+                widgetList.clear()
+                widgetList.addAll(dashState.widgets.sortedBy { it.position })
+            }
+        }
+
+        val listState    = rememberLazyListState()
+        val dragDropState = remember(widgetList) {
+            DragDropState(widgetList) { ordered ->
+                val reindexed = ordered.mapIndexed { i, w -> w.copy(position = i) }
+                dashVm.saveLayout(reindexed)
+            }
+        }
+
+        // Saldi cumulativi per conto (calcolati su TUTTI i movimenti)
+        val contiSaldi = remember(state.spese, state.conti) {
+            state.conti.map { conto -> conto to state.spese.saldoPerConto(conto) }
+        }
+
+        // Saldo totale patrimonio
+        val patrimonioNetto = remember(contiSaldi) { contiSaldi.sumOf { it.second } }
+
+        // Uscite/entrate mese selezionato per trend card conti
+        val usciteMese  = remember(speseFiltered) {
+            speseFiltered.filter { it.isUscita() && !it.isTransfer() }.sumOf { it.importo }
+        }
+        val entrateMese = remember(speseFiltered) {
+            speseFiltered.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo }
+        }
+
+        val rows = remember(widgetList.toList()) {
+            groupWidgets(widgetList)
         }
 
         LazyColumn(
+            state               = listState,
             modifier            = Modifier.padding(padding).fillMaxSize(),
             contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            state               = rememberLazyListState()
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
-            // ── Selettore mese — sempre in cima ──────────────────────
+            // ── Card Patrimonio netto ─────────────────────────────────
+            item(key = "patrimonio") {
+                ElevatedCard(
+                    modifier  = Modifier.fillMaxWidth(),
+                    shape     = RoundedCornerShape(16.dp),
+                    colors    = CardDefaults.elevatedCardColors(
+                        containerColor = Brand
+                    ),
+                    elevation = CardDefaults.elevatedCardElevation(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                "Patrimonio netto",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White.copy(alpha = 0.85f)
+                            )
+                            Text(
+                                String.format(Locale.getDefault(), "%.2f €", patrimonioNetto),
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(Icons.Default.ArrowUpward, null,
+                                    tint = Color.White.copy(alpha = 0.9f),
+                                    modifier = Modifier.size(14.dp))
+                                Text(String.format(Locale.getDefault(), "%.0f €", entrateMese),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.9f))
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(Icons.Default.ArrowDownward, null,
+                                    tint = Color.White.copy(alpha = 0.9f),
+                                    modifier = Modifier.size(14.dp))
+                                Text(String.format(Locale.getDefault(), "%.0f €", usciteMese),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.9f))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Card conti (ridisegnate) ──────────────────────────────
+            if (contiSaldi.isNotEmpty()) {
+                item(key = "saldi_conti") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "I tuoi conti",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(
+                            modifier              = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            contiSaldi.forEach { (conto, saldo) ->
+                                val isPositive  = saldo >= 0
+                                val contoNome   = conto.substringAfter(" - ", conto)
+                                ElevatedCard(
+                                    onClick   = { onContoDetail(conto) },
+                                    modifier  = Modifier.width(160.dp),
+                                    shape     = RoundedCornerShape(16.dp),
+                                    colors    = CardDefaults.elevatedCardColors(
+                                        containerColor = if (isPositive) IncomeContainer else ExpenseContainer
+                                    ),
+                                    elevation = CardDefaults.elevatedCardElevation(2.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.AccountBalance,
+                                                contentDescription = null,
+                                                tint = Brand,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Default.ChevronRight,
+                                                contentDescription = "Dettaglio",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text  = contoNome,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text  = String.format(Locale.getDefault(), "%.2f €", saldo),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isPositive) Brand else Danger
+                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isPositive) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
+                                                contentDescription = null,
+                                                tint = if (isPositive) Brand else Danger,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Text(
+                                                text = if (isPositive) "Positivo" else "Negativo",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (isPositive) Brand else Danger
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Selettore mese ────────────────────────────────────────
             item(key = "mese_selector") {
                 ElevatedCard(
                     modifier  = Modifier.fillMaxWidth(),
+                    shape     = RoundedCornerShape(12.dp),
                     colors    = CardDefaults.elevatedCardColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     ),
@@ -269,7 +545,6 @@ fun SummaryScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment     = Alignment.CenterVertically
                     ) {
-                        // Freccia sinistra — mese precedente
                         IconButton(onClick = {
                             val d = LocalDate.of(selectedYear, selectedMonth, 1).minusMonths(1)
                             selectedYear  = d.year
@@ -280,7 +555,6 @@ fun SummaryScreen(
                                 tint = Brand)
                         }
 
-                        // Label mese cliccabile → torna al mese corrente
                         TextButton(onClick = {
                             selectedYear  = today.year
                             selectedMonth = today.monthValue
@@ -288,6 +562,7 @@ fun SummaryScreen(
                             Text(
                                 meseLabel,
                                 style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
                                 color = if (selectedYear == today.year &&
                                     selectedMonth == today.monthValue)
                                     Brand
@@ -295,7 +570,6 @@ fun SummaryScreen(
                             )
                         }
 
-                        // Freccia destra — mese successivo (max mese corrente)
                         IconButton(
                             onClick = {
                                 val d = LocalDate.of(selectedYear, selectedMonth, 1).plusMonths(1)
@@ -318,19 +592,24 @@ fun SummaryScreen(
                 }
             }
 
-            // ── Widget rows ──────────────────────────────────────────
-            if (rows.isEmpty()) {
+            // ── Widget rows ───────────────────────────────────────────
+            if (widgetList.isEmpty() && !editMode) {
                 item(key = "empty") {
-                    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape    = RoundedCornerShape(16.dp)
+                    ) {
                         Column(
                             modifier            = Modifier.padding(24.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            Icon(Icons.Default.Dashboard, null,
+                                tint = Brand, modifier = Modifier.size(40.dp))
                             Text("Dashboard vuota",
                                 style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "Tieni premuto su un'area per entrare in modalità modifica e aggiungere widget.",
+                                "Tieni premuto su un'area o premi il bottone Modifica per aggiungere widget.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -341,10 +620,49 @@ fun SummaryScreen(
                         }
                     }
                 }
+            } else if (editMode) {
+                // Edit mode: lista flat con drag & drop nativo (un widget per riga)
+                itemsIndexed(
+                    items = widgetList,
+                    key   = { _, w -> w.id }
+                ) { index, widget ->
+                    val isDragging = dragDropState.draggedIndex == index
+                    EditableWidgetWrapper(
+                        config      = widget,
+                        editMode    = true,
+                        isDragging  = isDragging,
+                        onDragStart = { dragDropState.onDragStart(index) },
+                        onDragDelta = { dragDropState.onDrag(it) },
+                        onDragEnd   = { dragDropState.onDragEnd() },
+                        onDelete    = { dashVm.removeWidget(widget.id) },
+                        onResize    = { dashVm.toggleSize(widget.id) },
+                        onConfigure = { configuringWidget = widget },
+                        modifier    = Modifier
+                            .fillMaxWidth()
+                            .zIndex(if (isDragging) 1f else 0f)
+                            .graphicsLayer {
+                                translationY  = if (isDragging) dragDropState.dragOffsetY else 0f
+                                shadowElevation = if (isDragging) 32f else 0f
+                                scaleX = if (isDragging) 1.02f else 1f
+                                scaleY = if (isDragging) 1.02f else 1f
+                            }
+                            .onSizeChanged { dragDropState.setItemHeight(it.height.toFloat()) }
+                    ) {
+                        WidgetRenderer(
+                            config   = widget,
+                            spese    = if (widget.type == WidgetType.SALDO_CONTO)
+                                state.spese else speseFiltered,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
             } else {
-                items(items = rows, key = { row -> row.joinToString("_") { it.id } }) { row ->
+                // View mode: gruppi di righe (WIDE da soli, SMALL a coppie)
+                items(
+                    items = rows,
+                    key   = { row -> row.joinToString("_") { it.id } }
+                ) { row ->
                     if (row.size == 2) {
-                        // Due SMALL affiancati
                         Row(
                             modifier              = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -352,34 +670,39 @@ fun SummaryScreen(
                             row.forEach { widget ->
                                 EditableWidgetWrapper(
                                     config      = widget,
-                                    editMode    = editMode,
+                                    editMode    = false,
+                                    isDragging  = false,
                                     onLongPress = { editMode = true },
-                                    onDelete    = { dashVm.removeWidget(widget.id) },
-                                    onResize    = { dashVm.toggleSize(widget.id) },
+                                    onDelete    = { },
+                                    onResize    = { },
+                                    onConfigure = { },
                                     modifier    = Modifier.weight(1f)
                                 ) {
                                     WidgetRenderer(
                                         config   = widget,
-                                        spese    = speseFiltered,   // ← spese filtrate per mese
+                                        spese    = if (widget.type == WidgetType.SALDO_CONTO)
+                                            state.spese else speseFiltered,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
                             }
                         }
                     } else {
-                        // WIDE singolo
                         val widget = row.first()
                         EditableWidgetWrapper(
                             config      = widget,
-                            editMode    = editMode,
+                            editMode    = false,
+                            isDragging  = false,
                             onLongPress = { editMode = true },
-                            onDelete    = { dashVm.removeWidget(widget.id) },
-                            onResize    = { dashVm.toggleSize(widget.id) },
+                            onDelete    = { },
+                            onResize    = { },
+                            onConfigure = { },
                             modifier    = Modifier.fillMaxWidth()
                         ) {
                             WidgetRenderer(
                                 config   = widget,
-                                spese    = speseFiltered,   // ← spese filtrate per mese
+                                spese    = if (widget.type == WidgetType.SALDO_CONTO)
+                                    state.spese else speseFiltered,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -387,19 +710,118 @@ fun SummaryScreen(
                 }
             }
 
-            item(key = "bottom_space") { Spacer(Modifier.height(16.dp)) }
+            item(key = "bottom_space") { Spacer(Modifier.height(80.dp)) }
         }
     }
 }
 
+// ── Sheet configurazione widget ────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WidgetConfigSheet(
+    config: WidgetConfig,
+    conti: List<String>,
+    onDismiss: () -> Unit,
+    onSave: (WidgetConfig) -> Unit,
+    sheetState: SheetState
+) {
+    var periodo     by remember(config) { mutableStateOf(config.periodo) }
+    var topN        by remember(config) { mutableIntStateOf(config.topN) }
+    var contoFilter by remember(config) { mutableStateOf(config.contoFilter ?: "") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState       = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                "Configura: ${config.type.displayName()}",
+                style = MaterialTheme.typography.titleLarge
+            )
+
+            // Periodo (per tutti i widget eccetto SALDO_CONTO e ANDAMENTO_MENSILE)
+            if (config.type != WidgetType.SALDO_CONTO && config.type != WidgetType.ANDAMENTO_MENSILE) {
+                Text("Periodo", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    WidgetPeriodo.entries.forEach { p ->
+                        FilterChip(
+                            selected = periodo == p,
+                            onClick  = { periodo = p },
+                            label    = { Text(p.label()) }
+                        )
+                    }
+                }
+            }
+
+            // TopN (solo per TOP_CATEGORIE e ULTIMI_MOVIMENTI)
+            if (config.type == WidgetType.TOP_CATEGORIE || config.type == WidgetType.ULTIMI_MOVIMENTI) {
+                Text("Numero elementi: $topN",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Slider(
+                    value         = topN.toFloat(),
+                    onValueChange = { topN = it.toInt() },
+                    valueRange    = 3f..10f,
+                    steps         = 6,
+                    colors        = SliderDefaults.colors(thumbColor = Brand, activeTrackColor = Brand)
+                )
+            }
+
+            // Conto filter (solo per SALDO_CONTO)
+            if (config.type == WidgetType.SALDO_CONTO && conti.isNotEmpty()) {
+                Text("Conto da mostrare", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                conti.forEach { c ->
+                    val nomeC = c.substringAfter(" - ", c)
+                    FilterChip(
+                        selected = contoFilter == c,
+                        onClick  = { contoFilter = c },
+                        label    = { Text(nomeC) }
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)
+            ) {
+                OutlinedButton(onClick = onDismiss) { Text("Annulla") }
+                Button(
+                    onClick = {
+                        onSave(config.copy(
+                            periodo     = periodo,
+                            topN        = topN,
+                            contoFilter = contoFilter.takeIf { it.isNotBlank() }
+                        ))
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Brand)
+                ) { Text("Salva") }
+            }
+        }
+    }
+}
+
+// ── Widget wrapper con drag handle, config e delete ────────────────────────
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EditableWidgetWrapper(
     config: WidgetConfig,
     editMode: Boolean,
-    onLongPress: () -> Unit,
+    isDragging: Boolean,
+    onDragStart: () -> Unit = {},
+    onDragDelta: (Float) -> Unit = {},
+    onDragEnd: () -> Unit = {},
     onDelete: () -> Unit,
     onResize: () -> Unit,
+    onConfigure: () -> Unit,
+    onLongPress: () -> Unit = {},
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
@@ -411,62 +833,116 @@ private fun EditableWidgetWrapper(
     ) {
         content()
 
-        // ✕ cancella — in alto a destra
+        // Barra superiore edit mode: drag handle + config + delete
         AnimatedVisibility(
             visible  = editMode,
             enter    = fadeIn() + scaleIn(),
             exit     = fadeOut() + scaleOut(),
-            modifier = Modifier.align(Alignment.TopEnd)
+            modifier = Modifier.align(Alignment.TopStart).fillMaxWidth()
         ) {
-            Box(
+            Row(
                 modifier = Modifier
-                    .padding(4.dp)
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .combinedClickable(onClick = onDelete),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    shape    = CircleShape,
-                    color    = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.fillMaxSize()
-                ) { }
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = "Rimuovi",
-                    tint     = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
+                // Drag handle (≡)
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .pointerInput(Unit) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart  = { onDragStart() },
+                                onDragEnd    = { onDragEnd() },
+                                onDragCancel = { onDragEnd() },
+                                onDrag       = { change, dragAmount ->
+                                    change.consume()
+                                    onDragDelta(dragAmount.y)
+                                }
+                            )
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.DragHandle,
+                        contentDescription = "Trascina per riordinare",
+                        tint     = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
 
-        // ↔ resize — in basso a destra
-        AnimatedVisibility(
-            visible  = editMode,
-            enter    = fadeIn() + scaleIn(),
-            exit     = fadeOut() + scaleOut(),
-            modifier = Modifier.align(Alignment.BottomEnd)
-        ) {
-            Box(
-                modifier = Modifier
-                    .padding(4.dp)
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .combinedClickable(onClick = onResize),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    shape    = CircleShape,
-                    color    = Brand,
-                    modifier = Modifier.fillMaxSize()
-                ) { }
-                Icon(
-                    Icons.Default.OpenInFull,
-                    contentDescription = "Ridimensiona",
-                    tint     = Color.White,
-                    modifier = Modifier.size(14.dp)
-                )
+                Row {
+                    // ⚙ Configura
+                    Box(
+                        modifier = Modifier
+                            .padding(2.dp)
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .combinedClickable(onClick = onConfigure),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            shape    = CircleShape,
+                            color    = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.fillMaxSize()
+                        ) { }
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "Configura",
+                            tint     = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
+                    // ↔ Ridimensiona
+                    Box(
+                        modifier = Modifier
+                            .padding(2.dp)
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .combinedClickable(onClick = onResize),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            shape    = CircleShape,
+                            color    = Brand,
+                            modifier = Modifier.fillMaxSize()
+                        ) { }
+                        Icon(
+                            Icons.Default.OpenInFull,
+                            contentDescription = "Ridimensiona",
+                            tint     = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
+                    // ✕ Elimina
+                    Box(
+                        modifier = Modifier
+                            .padding(2.dp)
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .combinedClickable(onClick = onDelete),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            shape    = CircleShape,
+                            color    = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.fillMaxSize()
+                        ) { }
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Rimuovi",
+                            tint     = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
             }
         }
     }
 }
+

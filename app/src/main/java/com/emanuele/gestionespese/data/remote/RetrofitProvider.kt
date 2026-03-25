@@ -10,7 +10,9 @@
 package com.emanuele.gestionespese.data.remote
 
 import com.emanuele.gestionespese.BuildConfig
+import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.utils.DevLogger
+import com.google.gson.GsonBuilder
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -59,10 +61,14 @@ object RetrofitProvider {
             }
             .build()
 
+        val gson = GsonBuilder()
+            .registerTypeAdapter(SpesaView::class.java, SpesaViewDeserializer())
+            .create()
+
         return Retrofit.Builder()
             .baseUrl(baseUrl)
             .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
+            .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
     }
 }

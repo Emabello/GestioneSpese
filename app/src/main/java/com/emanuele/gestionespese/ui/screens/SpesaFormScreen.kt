@@ -123,6 +123,10 @@ fun SpesaFormScreen(
         )
     }
 
+    var contoDestinazione by remember(editingSpesa, state.draftPrefillTick) {
+        mutableStateOf(editingSpesa?.conto_destinazione.orEmpty())
+    }
+
     var note by remember(editingSpesa, state.draftPrefillTick) {
         mutableStateOf(
             when {
@@ -152,8 +156,9 @@ fun SpesaFormScreen(
     else editingSpesa?.conto.orEmpty()
     val initialNote           = if (hasDraftPrefill && state.draftDescrizione != null) state.draftDescrizione!!
     else editingSpesa?.descrizione.orEmpty()
-    val initialCategoria      = editingSpesa?.categoria?.trim().orEmpty()
-    val initialSottocategoria = editingSpesa?.sottocategoria?.trim().orEmpty()
+    val initialCategoria          = editingSpesa?.categoria?.trim().orEmpty()
+    val initialSottocategoria     = editingSpesa?.sottocategoria?.trim().orEmpty()
+    val initialContoDestinazione  = editingSpesa?.conto_destinazione.orEmpty()
 
     var prevTipo      by remember { mutableStateOf<String?>(null) }
     var prevCategoria by remember { mutableStateOf<String?>(null) }
@@ -162,8 +167,9 @@ fun SpesaFormScreen(
 
     LaunchedEffect(tipo) {
         if (prevTipo != null && prevTipo != tipo) {
-            categoria      = ""
-            sottocategoria = ""
+            categoria          = ""
+            sottocategoria     = ""
+            contoDestinazione  = ""
         }
         prevTipo = tipo
     }
@@ -197,11 +203,6 @@ fun SpesaFormScreen(
 
     val importoValue = importoText.replace(",", ".").toDoubleOrNull()
 
-    val canSave = editEnabled && !saving &&
-            importoValue != null && importoValue > 0.0 &&
-            data.isNotBlank() && tipo.isNotBlank() &&
-            conto.isNotBlank() && categoria.isNotBlank()
-
     val utcsUserActive        = remember(state.utcs) { state.utcs.filter { it.attivo } }
     val tipiOptions           = remember(utcsUserActive) {
         utcsUserActive.map { it.tipologia.trim() }.filter { it.isNotBlank() }.distinct().sorted()
@@ -222,6 +223,28 @@ fun SpesaFormScreen(
     val contiOptions = remember(state.conti) {
         state.conti.map { it.trim() }.filter { it.isNotBlank() }.distinct().sorted()
     }
+
+    // Deriva il tipo_movimento (es. "uscita", "entrata", "trasferimento") dall'UTC selezionato
+    val tipoMovimento = remember(tipo, state.utcs) {
+        state.utcs.firstOrNull {
+            it.tipologia.trim().equals(tipo.trim(), ignoreCase = true)
+        }?.tipoMovimento ?: "uscita"
+    }
+
+    // Determina se il tipo selezionato è un trasferimento tra conti
+    val isTransferType = tipoMovimento.equals("trasferimento", ignoreCase = true)
+
+    // Opzioni conto destinazione: tutti i conti escluso quello origine
+    val contiDestinazioneOptions = remember(contiOptions, conto) {
+        contiOptions.filter { it != conto }
+    }
+
+    val canSave = editEnabled && !saving &&
+            importoValue != null && importoValue > 0.0 &&
+            data.isNotBlank() && tipo.isNotBlank() &&
+            conto.isNotBlank() &&
+            (isTransferType || categoria.isNotBlank()) &&
+            (!isTransferType || contoDestinazione.isNotBlank())
 
     // ── Dialogs ───────────────────────────────────────────────────────
     if (showErrorPopup) {
@@ -325,14 +348,16 @@ fun SpesaFormScreen(
                         Button(
                             onClick = {
                                 vm.saveSpesa(
-                                    editingId      = if (isExisting) editingId else null,
-                                    data           = data,
-                                    importo        = importoValue ?: 0.0,
-                                    tipo           = tipo,
-                                    conto          = conto,
-                                    descrizione    = note.trim().ifBlank { null },
-                                    categoria      = categoria.trim(),
-                                    sottocategoria = sottocategoria.trim().ifBlank { null }
+                                    editingId         = if (isExisting) editingId else null,
+                                    data              = data,
+                                    importo           = importoValue ?: 0.0,
+                                    tipo              = tipo,
+                                    tipoMovimento     = tipoMovimento,
+                                    conto             = conto,
+                                    contoDestinazione = contoDestinazione.trim().ifBlank { null },
+                                    descrizione       = note.trim().ifBlank { null },
+                                    categoria         = categoria.trim().ifBlank { null },
+                                    sottocategoria    = sottocategoria.trim().ifBlank { null }
                                 )
                             },
                             enabled  = canSave,
@@ -351,14 +376,15 @@ fun SpesaFormScreen(
                                 if (draftId != null) {
                                     onBack()
                                 } else {
-                                    data           = initialData
-                                    importoText    = initialImporto
-                                    tipo           = initialTipo
-                                    conto          = initialConto
-                                    note           = initialNote
-                                    categoria      = initialCategoria
-                                    sottocategoria = initialSottocategoria
-                                    editEnabled    = false
+                                    data              = initialData
+                                    importoText       = initialImporto
+                                    tipo              = initialTipo
+                                    conto             = initialConto
+                                    note              = initialNote
+                                    categoria         = initialCategoria
+                                    sottocategoria    = initialSottocategoria
+                                    contoDestinazione = initialContoDestinazione
+                                    editEnabled       = false
                                 }
                             },
                             modifier = Modifier.weight(1f).height(50.dp),
@@ -513,6 +539,15 @@ fun SpesaFormScreen(
 
                     DropdownFieldString("Conto", conto, contiOptions,
                         editEnabled && !saving && !state.loadingLookups) { conto = it }
+
+                    AnimatedVisibility(visible = isTransferType) {
+                        DropdownFieldString(
+                            label   = "Conto destinazione",
+                            value   = contoDestinazione,
+                            options = contiDestinazioneOptions,
+                            enabled = editEnabled && !saving && !state.loadingLookups && conto.isNotBlank()
+                        ) { contoDestinazione = it }
+                    }
 
                     OutlinedTextField(
                         value         = note,

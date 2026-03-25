@@ -168,9 +168,11 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
         data: String,
         importo: Double,
         tipo: String,
+        tipoMovimento: String? = null,
         conto: String,
+        contoDestinazione: String? = null,
         descrizione: String?,
-        categoria: String,
+        categoria: String?,
         sottocategoria: String?
     ) {
         viewModelScope.launch {
@@ -179,26 +181,30 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
                 val isNew = editingId == null || editingId == -1
                 if (isNew) {
                     repo.add(
-                        utente = currentUtente,
-                        data = data,
-                        conto = conto,
-                        importo = importo,
-                        tipo = tipo,
-                        categoria = categoria,
-                        sottocategoria = sottocategoria,
-                        descrizione = descrizione
+                        utente            = currentUtente,
+                        data              = data,
+                        conto             = conto,
+                        contoDestinazione = contoDestinazione,
+                        importo           = importo,
+                        tipo              = tipo,
+                        tipoMovimento     = tipoMovimento,
+                        categoria         = categoria,
+                        sottocategoria    = sottocategoria,
+                        descrizione       = descrizione
                     )
                 } else {
                     repo.update(
-                        id = editingId,
-                        utente = currentUtente,
-                        data = data,
-                        conto = conto,
-                        importo = importo,
-                        tipo = tipo,
-                        categoria = categoria,
-                        sottocategoria = sottocategoria,
-                        descrizione = descrizione
+                        id                = editingId,
+                        utente            = currentUtente,
+                        data              = data,
+                        conto             = conto,
+                        contoDestinazione = contoDestinazione,
+                        importo           = importo,
+                        tipo              = tipo,
+                        tipoMovimento     = tipoMovimento,
+                        categoria         = categoria,
+                        sottocategoria    = sottocategoria,
+                        descrizione       = descrizione
                     )
                 }
                 repo.list(currentUtente)
@@ -254,8 +260,8 @@ class SpeseViewModel(private val repo: SpeseRepository, private val currentUtent
                 return@launch
             }
 
-            // Room vuoto → sync remoto (include anche UTCs)
-            repo.refreshLookupsFromRemoteAndSave(utenteId = currentUtente)
+            // Room vuoto → sync batch (popola tutte le tabelle in una sola chiamata)
+            repo.syncAllBatch(currentUtente)
 
             val local2 = repo.getLookupsFromDb(utenteId = currentUtente)
             val utcsLocal2 = repo.getUtcsFromDb(utenteId = currentUtente)

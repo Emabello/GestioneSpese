@@ -59,7 +59,9 @@ class SpeseRepository(
      * @param utente ID dell'utente.
      */
     suspend fun syncSpese(utente: String) {
-        val remoteList = api.getSpese(utente = utente).data ?: emptyList()
+        val response = api.getSpese(utente = utente)
+        if (!response.error.isNullOrBlank()) throw IllegalStateException(response.error)
+        val remoteList = response.data ?: return   // dati nulli → non cancellare la cache locale
         val entities = remoteList.map { it.toEntity(utente) }
         spesaDao.clearByUtente(utente)
         spesaDao.upsertAll(entities)
@@ -112,12 +114,6 @@ class SpeseRepository(
         val tipologiaTipoMap = buildTipologiaTipoMap(tipiRawList)
         val utcEntities      = (data.utcs ?: emptyList()).toUtcEntities(tipologiaTipoMap)
 
-        if (tipiList.isEmpty() && categorieList.isEmpty() && contiList.isEmpty()) {
-            // Risposta batch vuota → fallback
-            syncAll(utente)
-            return
-        }
-
         // ── Scrittura su Room ─────────────────────────────────────────────
         lookupDao.clearTipi()
         lookupDao.upsertTipi(tipiList)
@@ -147,8 +143,10 @@ class SpeseRepository(
         utente: String,
         data: String,
         conto: String,
+        contoDestinazione: String? = null,
         importo: Double,
         tipo: String,
+        tipoMovimento: String? = null,
         categoria: String?,
         sottocategoria: String?,
         descrizione: String?
@@ -161,15 +159,17 @@ class SpeseRepository(
                     utente = utente,
                     data = data,
                     conto = conto,
+                    conto_destinazione = contoDestinazione,
                     importo = importo,
                     tipo = tipo,
+                    tipo_movimento = tipoMovimento,
                     categoria = categoria,
                     sottocategoria = sottocategoria,
                     descrizione = descrizione
                 )
             )
         )
-        if (res.error != null) throw IllegalStateException(res.error)
+        if (!res.error.isNullOrBlank()) throw IllegalStateException(res.error)
         syncSpese(utente)
     }
 
@@ -184,8 +184,10 @@ class SpeseRepository(
         utente: String,
         data: String,
         conto: String,
+        contoDestinazione: String? = null,
         importo: Double,
         tipo: String,
+        tipoMovimento: String? = null,
         categoria: String?,
         sottocategoria: String?,
         descrizione: String?
@@ -198,15 +200,17 @@ class SpeseRepository(
                     utente = utente,
                     data = data,
                     conto = conto,
+                    conto_destinazione = contoDestinazione,
                     importo = importo,
                     tipo = tipo,
+                    tipo_movimento = tipoMovimento,
                     categoria = categoria,
                     sottocategoria = sottocategoria,
                     descrizione = descrizione
                 )
             )
         )
-        if (res.error != null) throw IllegalStateException(res.error)
+        if (!res.error.isNullOrBlank()) throw IllegalStateException(res.error)
         syncSpese(utente)
     }
 
@@ -219,7 +223,7 @@ class SpeseRepository(
      */
     suspend fun delete(id: Int, utente: String) {
         val res = api.deleteSpesa(DeleteRequest(resource = "spese", id = id))
-        if (res.error != null) throw IllegalStateException(res.error)
+        if (!res.error.isNullOrBlank()) throw IllegalStateException(res.error)
         spesaDao.deleteById(id)
     }
 
@@ -469,31 +473,33 @@ private fun List<Map<String, Any?>>.toUtcEntities(
 private fun SpesaView.toEntity(utente: String): SpesaEntity {
     val parts = data?.split("-")
     return SpesaEntity(
-        id             = id,
-        utente         = utente,
-        data           = data ?: "",
-        importo        = importo,
-        tipo           = tipo ?: "",
-        tipoMovimento  = tipo_movimento,
-        conto          = conto,
-        categoria      = categoria,
-        sottocategoria = sottocategoria,
-        descrizione    = descrizione,
-        mese           = parts?.getOrNull(1)?.toIntOrNull(),
-        anno           = parts?.getOrNull(0)?.toIntOrNull()
+        id                 = id,
+        utente             = utente,
+        data               = data ?: "",
+        importo            = importo,
+        tipo               = tipo ?: "",
+        tipoMovimento      = tipo_movimento,
+        conto              = conto,
+        contoDestinazione  = conto_destinazione,
+        categoria          = categoria,
+        sottocategoria     = sottocategoria,
+        descrizione        = descrizione,
+        mese               = parts?.getOrNull(1)?.toIntOrNull(),
+        anno               = parts?.getOrNull(0)?.toIntOrNull()
     )
 }
 
 /** Converte una [SpesaEntity] da Room in un [SpesaView] usato dalla UI. */
 private fun SpesaEntity.toSpesaView() = SpesaView(
-    id             = id,
-    utente         = utente,
-    data           = data,
-    importo        = importo,
-    tipo           = tipo,
-    tipo_movimento = tipoMovimento,
-    conto          = conto,
-    categoria      = categoria,
-    sottocategoria = sottocategoria,
-    descrizione    = descrizione
+    id                 = id,
+    utente             = utente,
+    data               = data,
+    importo            = importo,
+    tipo               = tipo,
+    tipo_movimento     = tipoMovimento,
+    conto              = conto,
+    conto_destinazione = contoDestinazione,
+    categoria          = categoria,
+    sottocategoria     = sottocategoria,
+    descrizione        = descrizione
 )
