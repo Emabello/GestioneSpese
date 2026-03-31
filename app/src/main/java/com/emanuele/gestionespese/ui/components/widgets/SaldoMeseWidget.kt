@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.data.model.WidgetConfig
+import com.emanuele.gestionespese.data.model.WidgetHeightStep
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.theme.Danger
 import com.emanuele.gestionespese.ui.theme.expenseContainer
@@ -43,6 +44,7 @@ fun SaldoMeseWidget(
         modifier  = modifier,
         cardColor = if (isPositive) MaterialTheme.incomeContainer else MaterialTheme.expenseContainer
     ) {
+        // S/M/L: saldo principale + segno badge
         Row(
             modifier              = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -59,58 +61,93 @@ fun SaldoMeseWidget(
                 color = (if (isPositive) Brand else Danger).copy(alpha = 0.10f)
             ) {
                 Text(
-                    text     = if (isPositive) "+" else "−",
-                    style    = MaterialTheme.typography.titleMedium,
+                    text       = if (isPositive) "+" else "−",
+                    style      = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color    = if (isPositive) Brand else Danger,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    color      = if (isPositive) Brand else Danger,
+                    modifier   = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Row(
-            modifier              = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Surface(
-                modifier = Modifier.weight(1f),
-                shape    = RoundedCornerShape(8.dp),
-                color    = Brand.copy(alpha = 0.08f)
+
+        // M+: riga entrate + uscite
+        if (config.heightStep.ordinal >= WidgetHeightStep.M.ordinal) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    modifier          = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape    = RoundedCornerShape(8.dp),
+                    color    = Brand.copy(alpha = 0.08f)
                 ) {
-                    Icon(Icons.Default.ArrowUpward, null,
-                        tint = Brand, modifier = Modifier.size(12.dp))
-                    Text(
-                        String.format(Locale.getDefault(), "%.0f €", entrate),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Brand
-                    )
+                    Row(
+                        modifier              = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.ArrowUpward, null,
+                            tint = Brand, modifier = Modifier.size(12.dp))
+                        Text(
+                            String.format(Locale.getDefault(), "%.0f €", entrate),
+                            style      = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = Brand
+                        )
+                    }
+                }
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape    = RoundedCornerShape(8.dp),
+                    color    = Danger.copy(alpha = 0.08f)
+                ) {
+                    Row(
+                        modifier              = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Default.ArrowDownward, null,
+                            tint = Danger, modifier = Modifier.size(12.dp))
+                        Text(
+                            String.format(Locale.getDefault(), "%.0f €", uscite),
+                            style      = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color      = Danger
+                        )
+                    }
                 }
             }
-            Surface(
-                modifier = Modifier.weight(1f),
-                shape    = RoundedCornerShape(8.dp),
-                color    = Danger.copy(alpha = 0.08f)
-            ) {
+        }
+
+        // L: barra di copertura uscite/entrate
+        if (config.heightStep == WidgetHeightStep.L && entrate > 0) {
+            Spacer(Modifier.height(10.dp))
+            val coverage = (uscite / entrate).toFloat().coerceIn(0f, 1f)
+            Column {
                 Row(
-                    modifier          = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    modifier              = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(Icons.Default.ArrowDownward, null,
-                        tint = Danger, modifier = Modifier.size(12.dp))
                     Text(
-                        String.format(Locale.getDefault(), "%.0f €", uscite),
-                        style = MaterialTheme.typography.labelMedium,
+                        "Copertura uscite",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "${(coverage * 100).toInt()}%",
+                        style      = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = Danger
+                        color      = if (coverage < 0.8f) Brand else Danger
                     )
                 }
+                Spacer(Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress   = { coverage },
+                    modifier   = Modifier.fillMaxWidth().height(6.dp),
+                    color      = if (coverage < 0.8f) Brand else Danger,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
             }
         }
     }

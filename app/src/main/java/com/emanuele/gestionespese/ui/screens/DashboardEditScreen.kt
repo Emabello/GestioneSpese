@@ -53,12 +53,10 @@ fun DashboardEditScreen(
                                 if (!alreadyAdded) {
                                     dashVm.addWidget(
                                         WidgetConfig(
-                                            type     = type,
-                                            size     = if (type == WidgetType.TOTALE_USCITE ||
-                                                type == WidgetType.TOTALE_ENTRATE ||
-                                                type == WidgetType.SALDO_CONTO)
-                                                WidgetSize.SMALL else WidgetSize.WIDE,
-                                            position = widgets.size
+                                            type       = type,
+                                            colSpan    = type.defaultColSpan(),
+                                            heightStep = type.defaultHeightStep(),
+                                            position   = widgets.size
                                         )
                                     )
                                 }
@@ -132,7 +130,7 @@ fun DashboardEditScreen(
                                 style = MaterialTheme.typography.titleSmall
                             )
                             Text(
-                                "${widget.size.name.lowercase()} · ${widget.periodo.label()}",
+                                "${widget.colSpan}/6 · ${widget.heightStep.name} · ${widget.periodo.label()}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

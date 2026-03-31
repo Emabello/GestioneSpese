@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.data.model.WidgetConfig
+import com.emanuele.gestionespese.data.model.WidgetHeightStep
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.theme.Danger
 import java.time.LocalDate
@@ -108,6 +109,9 @@ fun RisparmioCumulativoWidget(
             }
         }
 
+        // S: solo header, niente grafico
+        if (config.heightStep == WidgetHeightStep.S) return@WidgetCard
+
         Spacer(Modifier.height(8.dp))
 
         // Calcola range per normalizzazione
@@ -191,12 +195,51 @@ fun RisparmioCumulativoWidget(
         ) {
             points.forEach { p ->
                 Text(
-                    text  = p.label,
-                    style = MaterialTheme.typography.labelSmall,
+                    text       = p.label,
+                    style      = MaterialTheme.typography.labelSmall,
                     fontWeight = if (p.isCurrent) FontWeight.Bold else FontWeight.Normal,
-                    color = if (p.isCurrent) lineColor
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                    color      = if (p.isCurrent) lineColor
+                                 else MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+
+        // L: tabella mese per mese con cumulativo progressivo
+        if (config.heightStep == WidgetHeightStep.L) {
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(
+                color     = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                thickness = 0.5.dp
+            )
+            Spacer(Modifier.height(4.dp))
+            var cumulative = 0.0
+            points.forEach { p ->
+                cumulative += p.risparmio
+                val isPos = p.risparmio >= 0
+                Row(
+                    modifier              = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment     = Alignment.CenterVertically
+                ) {
+                    Text(
+                        p.label,
+                        style      = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (p.isCurrent) FontWeight.Bold else FontWeight.Normal,
+                        color      = if (p.isCurrent) lineColor
+                                     else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier   = Modifier.width(36.dp)
+                    )
+                    Text(
+                        text  = "${if (isPos) "+" else ""}${String.format(Locale.getDefault(), "%.0f €", p.risparmio)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isPos) Brand else Danger
+                    )
+                    Text(
+                        text  = String.format(Locale.getDefault(), "%.0f €", cumulative),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (cumulative >= 0) Brand else Danger
+                    )
+                }
             }
         }
     }

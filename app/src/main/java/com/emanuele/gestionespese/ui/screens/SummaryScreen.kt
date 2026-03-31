@@ -14,9 +14,13 @@
 package com.emanuele.gestionespese.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -47,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import kotlin.math.abs
 import com.emanuele.gestionespese.data.model.*
 import com.emanuele.gestionespese.ui.components.widgets.*
 import com.emanuele.gestionespese.ui.components.widgets.saldoPerConto
@@ -107,27 +112,32 @@ private class DragDropState(
     }
 }
 
-// Raggruppa i widget in righe: WIDE da soli, SMALL a coppie
-private fun groupWidgets(widgets: List<WidgetConfig>): List<List<WidgetConfig>> {
-    val rows = mutableListOf<List<WidgetConfig>>()
-    var i = 0
-    while (i < widgets.size) {
-        val current = widgets[i]
-        if (current.size == WidgetSize.WIDE) {
-            rows.add(listOf(current))
-            i++
+/** Raggruppa i widget in righe: ogni riga ha somma colSpan ≤ 6 (flow layout). */
+private fun flowRows(widgets: List<WidgetConfig>): List<List<WidgetConfig>> {
+    val rows = mutableListOf<MutableList<WidgetConfig>>()
+    var currentRow = mutableListOf<WidgetConfig>()
+    var currentSum = 0
+    for (w in widgets) {
+        if (currentSum + w.colSpan > 6) {
+            if (currentRow.isNotEmpty()) rows.add(currentRow)
+            currentRow = mutableListOf(w)
+            currentSum = w.colSpan
         } else {
-            val next = widgets.getOrNull(i + 1)
-            if (next != null && next.size == WidgetSize.SMALL) {
-                rows.add(listOf(current, next))
-                i += 2
-            } else {
-                rows.add(listOf(current))
-                i++
-            }
+            currentRow.add(w)
+            currentSum += w.colSpan
         }
     }
+    if (currentRow.isNotEmpty()) rows.add(currentRow)
     return rows
+}
+
+/** Spazio massimo disponibile per il widget nella sua riga (rispetta overflow e minColSpan). */
+private fun maxColSpanForWidget(widgetId: String, widgets: List<WidgetConfig>): Int {
+    val rows = flowRows(widgets)
+    val row = rows.find { r -> r.any { it.id == widgetId } } ?: return 6
+    val widget = row.first { it.id == widgetId }
+    val usedByOthers = row.filter { it.id != widgetId }.sumOf { it.colSpan }
+    return (6 - usedByOthers).coerceAtLeast(widget.type.minColSpan())
 }
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -221,12 +231,10 @@ fun SummaryScreen(
                             if (!alreadyAdded) {
                                 dashVm.addWidget(
                                     WidgetConfig(
-                                        type     = type,
-                                        size     = if (type == WidgetType.TOTALE_USCITE ||
-                                            type == WidgetType.TOTALE_ENTRATE ||
-                                            type == WidgetType.SALDO_CONTO)
-                                            WidgetSize.SMALL else WidgetSize.WIDE,
-                                        position = dashState.widgets.size
+                                        type       = type,
+                                        colSpan    = type.defaultColSpan(),
+                                        heightStep = type.defaultHeightStep(),
+                                        position   = dashState.widgets.size
                                     )
                                 )
                                 showAddPopup = false
@@ -391,7 +399,7 @@ fun SummaryScreen(
         }
 
         val rows = remember(widgetList.toList()) {
-            groupWidgets(widgetList)
+            flowRows(widgetList)
         }
 
         LazyColumn(
@@ -638,86 +646,95 @@ fun SummaryScreen(
                 }
             } else if (editMode) {
                 // Edit mode: lista flat con drag & drop nativo (un widget per riga)
-                itemsIndexed(
-                    items = widgetList,
-                    key   = { _, w -> w.id }
-                ) { index, widget ->
-                    val isDragging = dragDropState.draggedIndex == index
-                    EditableWidgetWrapper(
-                        config      = widget,
-                        editMode    = true,
-                        isDragging  = isDragging,
-                        onDragStart = { dragDropState.onDragStart(index) },
-                        onDragDelta = { dragDropState.onDrag(it) },
-                        onDragEnd   = { dragDropState.onDragEnd() },
-                        onDelete    = { dashVm.removeWidget(widget.id) },
-                        onResize    = { dashVm.toggleSize(widget.id) },
-                        onConfigure = { configuringWidget = widget },
-                        modifier    = Modifier
-                            .fillMaxWidth()
-                            .zIndex(if (isDragging) 1f else 0f)
-                            .graphicsLayer {
-                                translationY  = if (isDragging) dragDropState.dragOffsetY else 0f
-                                shadowElevation = if (isDragging) 32f else 0f
-                                scaleX = if (isDragging) 1.02f else 1f
-                                scaleY = if (isDragging) 1.02f else 1f
-                            }
-                            .onSizeChanged { dragDropState.setItemHeight(index, it.height.toFloat()) }
-                    ) {
-                        WidgetRenderer(
-                            config   = widget,
-                            spese    = state.spese,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-            } else {
-                // View mode: gruppi di righe (WIDE da soli, SMALL a coppie)
-                items(
-                    items = rows,
-                    key   = { row -> row.joinToString("_") { it.id } }
-                ) { row ->
-                    if (row.size == 2) {
-                        Row(
-                            modifier              = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            row.forEach { widget ->
+                // BoxWithConstraints usato per calcolare la larghezza schermo per resize
+                item(key = "edit_grid") {
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        val screenWidthPx = constraints.maxWidth.toFloat()
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            widgetList.forEachIndexed { index, widget ->
+                                val isDragging = dragDropState.draggedIndex == index
+                                val maxCols = maxColSpanForWidget(widget.id, widgetList.toList())
+                                val animatedHeight by animateDpAsState(
+                                    targetValue = widget.heightStep.toDp(),
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness    = Spring.StiffnessMedium
+                                    ),
+                                    label = "widgetHeight_${widget.id}"
+                                )
                                 EditableWidgetWrapper(
-                                    config      = widget,
-                                    editMode    = false,
-                                    isDragging  = false,
-                                    onLongPress = { editMode = true },
-                                    onDelete    = { },
-                                    onResize    = { },
-                                    onConfigure = { },
-                                    modifier    = Modifier.weight(1f)
+                                    config            = widget,
+                                    editMode          = true,
+                                    isDragging        = isDragging,
+                                    maxColSpan        = maxCols,
+                                    screenWidthPx     = screenWidthPx,
+                                    onDragStart       = { dragDropState.onDragStart(index) },
+                                    onDragDelta       = { dragDropState.onDrag(it) },
+                                    onDragEnd         = { dragDropState.onDragEnd() },
+                                    onDelete          = { dashVm.removeWidget(widget.id) },
+                                    onColSpanChange   = { dashVm.setColSpan(widget.id, it) },
+                                    onHeightStepChange = { dashVm.setHeightStep(widget.id, it) },
+                                    onConfigure       = { configuringWidget = widget },
+                                    modifier          = Modifier
+                                        .fillMaxWidth()
+                                        .height(animatedHeight)
+                                        .zIndex(if (isDragging) 1f else 0f)
+                                        .graphicsLayer {
+                                            translationY    = if (isDragging) dragDropState.dragOffsetY else 0f
+                                            shadowElevation = if (isDragging) 32f else 0f
+                                            scaleX = if (isDragging) 1.02f else 1f
+                                            scaleY = if (isDragging) 1.02f else 1f
+                                        }
+                                        .onSizeChanged { dragDropState.setItemHeight(index, it.height.toFloat()) }
                                 ) {
                                     WidgetRenderer(
                                         config   = widget,
                                         spese    = state.spese,
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier.fillMaxSize()
                                     )
                                 }
                             }
                         }
-                    } else {
-                        val widget = row.first()
-                        EditableWidgetWrapper(
-                            config      = widget,
-                            editMode    = false,
-                            isDragging  = false,
-                            onLongPress = { editMode = true },
-                            onDelete    = { },
-                            onResize    = { },
-                            onConfigure = { },
-                            modifier    = Modifier.fillMaxWidth()
-                        ) {
-                            WidgetRenderer(
-                                config   = widget,
-                                spese    = state.spese,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                    }
+                }
+            } else {
+                // View mode: righe con colSpan peso (6 colonne)
+                items(
+                    items = rows,
+                    key   = { row -> row.joinToString("_") { it.id } }
+                ) { row ->
+                    Row(
+                        modifier              = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        row.forEach { widget ->
+                            val rowHeightDp = row.maxOf { it.heightStep.toDp().value }.dp
+                            EditableWidgetWrapper(
+                                config            = widget,
+                                editMode          = false,
+                                isDragging        = false,
+                                maxColSpan        = 6,
+                                screenWidthPx     = 0f,
+                                onLongPress       = { editMode = true },
+                                onDelete          = { },
+                                onColSpanChange   = { },
+                                onHeightStepChange = { },
+                                onConfigure       = { },
+                                modifier          = Modifier
+                                    .weight(widget.colSpan.toFloat())
+                                    .height(rowHeightDp)
+                            ) {
+                                WidgetRenderer(
+                                    config   = widget,
+                                    spese    = state.spese,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+                        // Slot vuoto se la riga non riempie 6 colonne
+                        val remaining = 6 - row.sumOf { it.colSpan }
+                        if (remaining > 0) {
+                            Spacer(Modifier.weight(remaining.toFloat()))
                         }
                     }
                 }
@@ -834,18 +851,21 @@ private fun WidgetConfigSheet(
     }
 }
 
-// ── Widget wrapper con drag handle, config e delete ────────────────────────
+// ── Widget wrapper con drag handle, config, delete e resize angolo ─────────
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EditableWidgetWrapper(
     config: WidgetConfig,
     editMode: Boolean,
     isDragging: Boolean,
+    maxColSpan: Int,
+    screenWidthPx: Float,
     onDragStart: () -> Unit = {},
     onDragDelta: (Float) -> Unit = {},
     onDragEnd: () -> Unit = {},
     onDelete: () -> Unit,
-    onResize: () -> Unit,
+    onColSpanChange: (Int) -> Unit,
+    onHeightStepChange: (WidgetHeightStep) -> Unit,
     onConfigure: () -> Unit,
     onLongPress: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -853,7 +873,7 @@ private fun EditableWidgetWrapper(
 ) {
     Box(
         modifier = modifier.combinedClickable(
-            onClick    = { },
+            onClick     = { },
             onLongClick = onLongPress
         )
     ) {
@@ -873,7 +893,7 @@ private fun EditableWidgetWrapper(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Drag handle (≡)
+                // Drag handle (≡) — long-press per riordinare
                 Box(
                     modifier = Modifier
                         .size(28.dp)
@@ -923,29 +943,6 @@ private fun EditableWidgetWrapper(
                         )
                     }
 
-                    // ↔ Ridimensiona — icona cambia in base alla dimensione corrente
-                    Box(
-                        modifier = Modifier
-                            .padding(2.dp)
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .combinedClickable(onClick = onResize),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Surface(
-                            shape    = CircleShape,
-                            color    = Brand,
-                            modifier = Modifier.fillMaxSize()
-                        ) { }
-                        Icon(
-                            if (config.size == WidgetSize.WIDE) Icons.Default.CloseFullscreen
-                            else Icons.Default.OpenInFull,
-                            contentDescription = if (config.size == WidgetSize.WIDE) "Comprimi" else "Espandi",
-                            tint     = Color.White,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-
                     // ✕ Elimina
                     Box(
                         modifier = Modifier
@@ -969,6 +966,120 @@ private fun EditableWidgetWrapper(
                     }
                 }
             }
+        }
+
+        // Handle angolo inferiore destro: drag X=larghezza, drag Y=altezza (solo in edit mode)
+        AnimatedVisibility(
+            visible  = editMode,
+            enter    = fadeIn() + scaleIn(),
+            exit     = fadeOut() + scaleOut(),
+            modifier = Modifier.align(Alignment.BottomEnd)
+        ) {
+            ResizeCornerHandle(
+                config             = config,
+                maxColSpan         = maxColSpan,
+                screenWidthPx      = screenWidthPx,
+                onColSpanChange    = onColSpanChange,
+                onHeightStepChange = onHeightStepChange
+            )
+        }
+    }
+}
+
+// ── Handle angolo S-E: drag X=colSpan, drag Y=heightStep ──────────────────
+@Composable
+private fun ResizeCornerHandle(
+    config: WidgetConfig,
+    maxColSpan: Int,
+    screenWidthPx: Float,
+    onColSpanChange: (Int) -> Unit,
+    onHeightStepChange: (WidgetHeightStep) -> Unit
+) {
+    var accX             by remember { mutableFloatStateOf(0f) }
+    var accY             by remember { mutableFloatStateOf(0f) }
+    var dragStartColSpan by remember { mutableIntStateOf(config.colSpan) }
+    var previewColSpan   by remember(config.colSpan) { mutableIntStateOf(config.colSpan) }
+    var isOverflow       by remember { mutableStateOf(false) }
+    var liveHeightStep   by remember(config.heightStep) { mutableStateOf(config.heightStep) }
+
+    // 1 unità colonna in px; protezione divisione per zero
+    val colUnitPx = if (screenWidthPx > 0f) screenWidthPx / 6f else 60f
+    // Soglia di drag verticale per cambiare step (in px, ~40dp a 2dp/px)
+    val heightThresholdPx = 80f
+
+    val handleColor = if (isOverflow) Danger else Brand
+
+    Box(
+        modifier = Modifier
+            .size(36.dp)  // area touch
+            .pointerInput(config.id, maxColSpan) {
+                detectDragGestures(
+                    onDragStart = { _ ->
+                        accX             = 0f
+                        accY             = 0f
+                        dragStartColSpan = config.colSpan
+                        liveHeightStep   = config.heightStep
+                    },
+                    onDragEnd = {
+                        onColSpanChange(previewColSpan)
+                        accX       = 0f
+                        accY       = 0f
+                        isOverflow = false
+                    },
+                    onDragCancel = {
+                        previewColSpan = config.colSpan
+                        accX           = 0f
+                        accY           = 0f
+                        isOverflow     = false
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        accX += dragAmount.x
+                        accY += dragAmount.y
+
+                        // ── Larghezza: snap a VALID_COL_SPANS ─────────────────────────────
+                        val rawFloat   = dragStartColSpan + accX / colUnitPx
+                        val targetCol  = VALID_COL_SPANS.minByOrNull { abs(it - rawFloat) } ?: dragStartColSpan
+                        val clamped    = targetCol.coerceIn(config.type.minColSpan(), maxColSpan)
+                        isOverflow     = targetCol > maxColSpan
+                        previewColSpan = clamped
+
+                        // ── Altezza: cambia step quando si supera la soglia ───────────────
+                        val steps      = WidgetHeightStep.entries
+                        val currentIdx = steps.indexOf(liveHeightStep)
+                        when {
+                            accY > heightThresholdPx && currentIdx < steps.size - 1 -> {
+                                val newStep = steps[currentIdx + 1]
+                                liveHeightStep = newStep
+                                onHeightStepChange(newStep)
+                                accY = 0f
+                            }
+                            accY < -heightThresholdPx && currentIdx > 0 -> {
+                                val newStep = steps[currentIdx - 1]
+                                liveHeightStep = newStep
+                                onHeightStepChange(newStep)
+                                accY = 0f
+                            }
+                        }
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        // Indicatore visivo: quadratino colorato nell'angolo
+        Surface(
+            shape    = RoundedCornerShape(topStart = 10.dp, topEnd = 2.dp, bottomEnd = 2.dp, bottomStart = 2.dp),
+            color    = handleColor,
+            modifier = Modifier.size(26.dp)
+        ) {
+            Icon(
+                imageVector        = Icons.Default.OpenWith,
+                contentDescription = "Ridimensiona",
+                tint               = Color.White,
+                modifier           = Modifier
+                    .padding(4.dp)
+                    .fillMaxSize()
+            )
         }
     }
 }

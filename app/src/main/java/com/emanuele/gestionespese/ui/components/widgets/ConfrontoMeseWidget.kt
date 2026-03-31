@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.data.model.WidgetConfig
+import com.emanuele.gestionespese.data.model.WidgetHeightStep
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.theme.Danger
 import java.time.LocalDate
@@ -74,53 +75,128 @@ fun ConfrontoMeseWidget(
     val varEntrate  = remember(corrente, precedente) { variazionePct(corrente.entrate,  precedente.entrate) }
 
     WidgetCard(title = "Confronto mese", modifier = modifier) {
+        // S: solo badge variazione % per uscite e entrate
+        if (config.heightStep == WidgetHeightStep.S) {
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment     = Alignment.CenterVertically
+            ) {
+                if (varUscite != null) {
+                    val isWorse = varUscite > 0
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = (if (isWorse) Danger else Brand).copy(alpha = 0.10f),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier            = Modifier.padding(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Uscite", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                "${if (varUscite >= 0) "+" else ""}${String.format(Locale.getDefault(), "%.0f%%", varUscite)}",
+                                style      = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color      = if (isWorse) Danger else Brand
+                            )
+                        }
+                    }
+                }
+                if (varEntrate != null) {
+                    val isGood = varEntrate > 0
+                    Surface(
+                        shape    = RoundedCornerShape(6.dp),
+                        color    = (if (isGood) Brand else Danger).copy(alpha = 0.10f),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier            = Modifier.padding(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Entrate", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                "${if (varEntrate >= 0) "+" else ""}${String.format(Locale.getDefault(), "%.0f%%", varEntrate)}",
+                                style      = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color      = if (isGood) Brand else Danger
+                            )
+                        }
+                    }
+                }
+            }
+            return@WidgetCard
+        }
+
+        // M/L: layout completo
         // Intestazione colonne
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier              = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(labelCorrente,
-                style = MaterialTheme.typography.labelSmall,
+            Text(
+                labelCorrente,
+                style      = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = Brand,
-                modifier = Modifier.weight(1f))
+                color      = Brand,
+                modifier   = Modifier.weight(1f)
+            )
             Text("vs",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(labelPrecedente,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-                textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                labelPrecedente,
+                style     = MaterialTheme.typography.labelSmall,
+                color     = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier  = Modifier.weight(1f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.End
+            )
         }
 
         Spacer(Modifier.height(8.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
         Spacer(Modifier.height(8.dp))
 
-        // Riga uscite
         ConfrRow(
-            label      = "Uscite",
-            corrente   = corrente.uscite,
-            precedente = precedente.uscite,
-            variazione = varUscite,
-            // Spendere meno è positivo → green
+            label          = "Uscite",
+            corrente       = corrente.uscite,
+            precedente     = precedente.uscite,
+            variazione     = varUscite,
             isPositiveGood = false,
-            accentColor = Danger
+            accentColor    = Danger
         )
 
         Spacer(Modifier.height(6.dp))
 
-        // Riga entrate
         ConfrRow(
-            label      = "Entrate",
-            corrente   = corrente.entrate,
-            precedente = precedente.entrate,
-            variazione = varEntrate,
-            // Guadagnare di più è positivo → green
+            label          = "Entrate",
+            corrente       = corrente.entrate,
+            precedente     = precedente.entrate,
+            variazione     = varEntrate,
             isPositiveGood = true,
-            accentColor = Brand
+            accentColor    = Brand
         )
+
+        // L: riga saldo netto (corrente vs precedente)
+        if (config.heightStep == WidgetHeightStep.L) {
+            val saldoCorrente   = corrente.entrate - corrente.uscite
+            val saldoPrecedente = precedente.entrate - precedente.uscite
+            val varSaldo = variazionePct(saldoCorrente, kotlin.math.abs(saldoPrecedente))
+            Spacer(Modifier.height(6.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            Spacer(Modifier.height(6.dp))
+            ConfrRow(
+                label          = "Saldo netto",
+                corrente       = saldoCorrente,
+                precedente     = saldoPrecedente,
+                variazione     = varSaldo,
+                isPositiveGood = true,
+                accentColor    = if (saldoCorrente >= 0) Brand else Danger
+            )
+        }
     }
 }
 

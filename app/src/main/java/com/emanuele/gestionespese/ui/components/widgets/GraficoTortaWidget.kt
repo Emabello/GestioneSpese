@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.data.model.WidgetConfig
+import com.emanuele.gestionespese.data.model.WidgetHeightStep
 import com.emanuele.gestionespese.ui.theme.Brand
 import java.util.Locale
 
@@ -41,18 +42,25 @@ fun GraficoTortaWidget(
     spese: List<SpesaView>,
     modifier: Modifier = Modifier
 ) {
-    val slices = remember(spese, config.periodo) {
+    val allSlices = remember(spese, config.periodo) {
         spese.filteredByPeriodo(config.periodo)
             .filter { it.isUscita() }
             .groupBy { it.categoria?.trim() ?: "Altro" }
             .mapValues { (_, v) -> v.sumOf { it.importo } }
             .entries.sortedByDescending { it.value }
-            .take(8)
     }
-    val totale = slices.sumOf { it.value }
+    // M: top 4, L: tutti (max 8)
+    val slices = remember(allSlices, config.heightStep) {
+        when (config.heightStep) {
+            WidgetHeightStep.S -> allSlices.take(4)
+            WidgetHeightStep.M -> allSlices.take(4)
+            WidgetHeightStep.L -> allSlices.take(8)
+        }
+    }
+    val totale = allSlices.sumOf { it.value }
 
     WidgetCard(title = "Distribuzione uscite", modifier = modifier) {
-        if (slices.isEmpty()) {
+        if (allSlices.isEmpty()) {
             Text(
                 "Nessun dato",
                 style = MaterialTheme.typography.bodySmall,
@@ -61,11 +69,23 @@ fun GraficoTortaWidget(
             return@WidgetCard
         }
 
-        val textColor    = MaterialTheme.colorScheme.onSurface.toArgb()
-        val subTextColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
-        val brandArgb    = Brand.toArgb()
-        val bgColor      = MaterialTheme.colorScheme.surface
+        // S: solo totale importo
+        if (config.heightStep == WidgetHeightStep.S) {
+            Text(
+                text       = String.format(Locale.getDefault(), "%.2f €", totale),
+                style      = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color      = Brand
+            )
+            Text(
+                "Uscite ${config.periodo.label()}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            return@WidgetCard
+        }
 
+        // M/L: donut + legenda
         Row(
             modifier              = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -73,8 +93,8 @@ fun GraficoTortaWidget(
         ) {
             // Donut chart con totale al centro
             Box(
-                modifier          = Modifier.size(120.dp),
-                contentAlignment  = Alignment.Center
+                modifier         = Modifier.size(120.dp),
+                contentAlignment = Alignment.Center
             ) {
                 Canvas(modifier = Modifier.size(120.dp)) {
                     val strokeWidth = 22.dp.toPx()
@@ -87,7 +107,7 @@ fun GraficoTortaWidget(
                         drawArc(
                             color      = TORTA_COLORS[idx % TORTA_COLORS.size],
                             startAngle = startAngle,
-                            sweepAngle = sweep - 1f, // gap tra le fette
+                            sweepAngle = sweep - 1f,
                             useCenter  = false,
                             topLeft    = topLeft,
                             size       = arcSize,
@@ -96,7 +116,6 @@ fun GraficoTortaWidget(
                         startAngle += sweep
                     }
                 }
-                // Testo al centro
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text       = String.format(Locale.getDefault(), "%.0f", totale),
@@ -112,7 +131,7 @@ fun GraficoTortaWidget(
                 }
             }
 
-            // Legenda: dot + nome + percentuale
+            // Legenda: dot + nome + percentuale (+ importo in L)
             Column(
                 verticalArrangement = Arrangement.spacedBy(5.dp),
                 modifier            = Modifier.weight(1f)
@@ -133,11 +152,18 @@ fun GraficoTortaWidget(
                             modifier = Modifier.weight(1f),
                             maxLines = 1
                         )
+                        if (config.heightStep == WidgetHeightStep.L) {
+                            Text(
+                                text  = String.format(Locale.getDefault(), "%.0f €", valore),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Text(
-                            text  = "$pct%",
-                            style = MaterialTheme.typography.labelSmall,
+                            text       = "$pct%",
+                            style      = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = TORTA_COLORS[idx % TORTA_COLORS.size]
+                            color      = TORTA_COLORS[idx % TORTA_COLORS.size]
                         )
                     }
                 }

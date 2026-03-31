@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.data.model.WidgetConfig
+import com.emanuele.gestionespese.data.model.WidgetHeightStep
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.theme.Danger
 import java.time.LocalDate
@@ -29,13 +30,18 @@ fun UltimiMovimentiWidget(
     spese: List<SpesaView>,
     modifier: Modifier = Modifier
 ) {
-    val ultimi = remember(spese, config.topN, config.periodo) {
+    val maxItems = when (config.heightStep) {
+        WidgetHeightStep.S -> 3
+        WidgetHeightStep.M -> 5
+        WidgetHeightStep.L -> config.topN
+    }
+    val ultimi = remember(spese, maxItems, config.periodo) {
         spese.filteredByPeriodo(config.periodo)
             .sortedByDescending { it.data }
-            .take(config.topN)
+            .take(maxItems)
     }
 
-    WidgetCard(title = "Ultimi ${config.topN} movimenti", modifier = modifier) {
+    WidgetCard(title = "Ultimi movimenti", modifier = modifier) {
         if (ultimi.isEmpty()) {
             Text("Nessun movimento", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -58,39 +64,60 @@ fun UltimiMovimentiWidget(
                     else               -> Danger.copy(alpha = 0.10f)
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            spesa.categoria?.trim() ?: "—",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            formatDataBreve(spesa.data),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = bgColor
+                if (config.heightStep == WidgetHeightStep.S) {
+                    // S: riga compatta su una sola linea
+                    Row(
+                        modifier              = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "$sign ${String.format(Locale.getDefault(), "%.2f", spesa.importo)} €",
-                            style = MaterialTheme.typography.labelMedium,
+                            (spesa.categoria?.trim() ?: "—").take(16),
+                            style    = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1
+                        )
+                        Text(
+                            text  = "$sign ${String.format(Locale.getDefault(), "%.0f", spesa.importo)} €",
+                            style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = amountColor,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            color = amountColor
                         )
                     }
+                } else {
+                    // M/L: riga standard con categoria + data + importo badge
+                    Row(
+                        modifier              = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                spesa.categoria?.trim() ?: "—",
+                                style      = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                formatDataBreve(spesa.data),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Surface(shape = RoundedCornerShape(8.dp), color = bgColor) {
+                            Text(
+                                text     = "$sign ${String.format(Locale.getDefault(), "%.2f", spesa.importo)} €",
+                                style    = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color    = amountColor,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
                 }
+
                 if (idx < ultimi.size - 1) {
                     HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                        color     = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                         thickness = 0.5.dp
                     )
                 }

@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.data.model.WidgetConfig
+import com.emanuele.gestionespese.data.model.WidgetHeightStep
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.theme.Danger
 import java.time.LocalDate
@@ -132,6 +133,9 @@ fun AndamentoMensileWidget(
             Spacer(Modifier.height(8.dp))
         }
 
+        // S: solo header, niente grafico
+        if (config.heightStep == WidgetHeightStep.S) return@WidgetCard
+
         val brandColor    = Brand
         val brandColorDim = Brand.copy(alpha = 0.30f)
         val dangerColor   = Danger
@@ -197,23 +201,63 @@ fun AndamentoMensileWidget(
         Spacer(Modifier.height(4.dp))
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment     = Alignment.CenterVertically
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Canvas(modifier = Modifier.size(8.dp)) { drawCircle(color = brandColor) }
-                Text("Entrate", style = MaterialTheme.typography.labelSmall,
-                    color = Brand)
+                Text("Entrate", style = MaterialTheme.typography.labelSmall, color = Brand)
             }
             Row(
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Canvas(modifier = Modifier.size(8.dp)) { drawCircle(color = dangerColor) }
-                Text("Uscite", style = MaterialTheme.typography.labelSmall,
-                    color = Danger)
+                Text("Uscite", style = MaterialTheme.typography.labelSmall, color = Danger)
+            }
+        }
+
+        // L: tabella mensile
+        if (config.heightStep == WidgetHeightStep.L) {
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(
+                color     = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                thickness = 0.5.dp
+            )
+            Spacer(Modifier.height(4.dp))
+            months.forEach { m ->
+                val delta = m.entrate - m.uscite
+                Row(
+                    modifier              = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment     = Alignment.CenterVertically
+                ) {
+                    Text(
+                        m.label,
+                        style      = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (m.isCurrent) FontWeight.Bold else FontWeight.Normal,
+                        color      = if (m.isCurrent) MaterialTheme.colorScheme.onSurface
+                                     else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier   = Modifier.width(36.dp)
+                    )
+                    Text(
+                        String.format(Locale.getDefault(), "%.0f €", m.entrate),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Brand
+                    )
+                    Text(
+                        String.format(Locale.getDefault(), "%.0f €", m.uscite),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Danger
+                    )
+                    Text(
+                        text  = "${if (delta >= 0) "+" else ""}${String.format(Locale.getDefault(), "%.0f €", delta)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (delta >= 0) Brand else Danger
+                    )
+                }
             }
         }
     }
