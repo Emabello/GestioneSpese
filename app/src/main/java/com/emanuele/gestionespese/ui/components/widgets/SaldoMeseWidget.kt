@@ -33,8 +33,8 @@ fun SaldoMeseWidget(
     modifier: Modifier = Modifier
 ) {
     val filtered   = remember(spese, config.periodo) { spese.filteredByPeriodo(config.periodo) }
-    val entrate    = remember(filtered) { filtered.filter { it.isEntrata() }.sumOf { it.importo } }
-    val uscite     = remember(filtered) { filtered.filter { it.isUscita() }.sumOf { it.importo } }
+    val entrate    = remember(filtered) { filtered.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo } }
+    val uscite     = remember(filtered) { filtered.filter { it.isUscita()  && !it.isTransfer() }.sumOf { it.importo } }
     val saldo      = entrate - uscite
     val isPositive = saldo >= 0
 
