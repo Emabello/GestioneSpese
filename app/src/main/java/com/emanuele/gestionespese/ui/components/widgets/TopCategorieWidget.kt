@@ -108,8 +108,8 @@ fun TopCategorieWidget(
                     progress   = { (totCat / maxVal).toFloat() },
                     modifier   = Modifier
                         .fillMaxWidth()
-                        .height(4.dp)
-                        .padding(bottom = 2.dp),
+                        .padding(bottom = 2.dp)
+                        .height(4.dp),
                     color      = if (idx == 0) Danger else Brand,
                     trackColor = Brand.copy(alpha = 0.10f)
                 )
