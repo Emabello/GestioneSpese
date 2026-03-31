@@ -45,9 +45,7 @@ fun DashboardEditScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     WidgetType.entries.forEach { type ->
-                        // SALDO_CONTO può essere aggiunto più volte (uno per conto)
-                        val alreadyAdded = if (type == WidgetType.SALDO_CONTO) false
-                                           else widgets.any { it.type == type }
+                        val alreadyAdded = widgets.any { it.type == type }
                         OutlinedButton(
                             onClick = {
                                 if (!alreadyAdded) {
@@ -55,8 +53,7 @@ fun DashboardEditScreen(
                                         WidgetConfig(
                                             type     = type,
                                             size     = if (type == WidgetType.TOTALE_USCITE ||
-                                                type == WidgetType.TOTALE_ENTRATE ||
-                                                type == WidgetType.SALDO_CONTO)
+                                                type == WidgetType.TOTALE_ENTRATE)
                                                 WidgetSize.SMALL else WidgetSize.WIDE,
                                             position = widgets.size
                                         )
@@ -160,40 +157,34 @@ fun DashboardEditScreen(
 }
 
 fun WidgetType.displayName(): String = when (this) {
-    WidgetType.TOTALE_USCITE        -> "Totale uscite"
-    WidgetType.TOTALE_ENTRATE       -> "Totale entrate"
-    WidgetType.SALDO_MESE           -> "Saldo mese"
-    WidgetType.GRAFICO_TORTA        -> "Grafico torta"
-    WidgetType.ULTIMI_MOVIMENTI     -> "Ultimi movimenti"
-    WidgetType.TOP_CATEGORIE        -> "Top categorie"
-    WidgetType.SALDO_CONTO          -> "Saldo conto"
-    WidgetType.ANDAMENTO_MENSILE    -> "Andamento mensile"
-    WidgetType.CONFRONTO_MESE       -> "Confronto mese"
-    WidgetType.RISPARMIO_CUMULATIVO -> "Risparmio cumulativo"
+    WidgetType.TOTALE_USCITE     -> "Totale uscite"
+    WidgetType.TOTALE_ENTRATE    -> "Totale entrate"
+    WidgetType.SALDO_MESE        -> "Saldo mese"
+    WidgetType.GRAFICO_TORTA     -> "Grafico torta"
+    WidgetType.ULTIMI_MOVIMENTI  -> "Ultimi movimenti"
+    WidgetType.TOP_CATEGORIE     -> "Top categorie"
+    WidgetType.SALDO_CONTO       -> "Saldo conto"
+    WidgetType.ANDAMENTO_MENSILE -> "Andamento mensile"
 }
 
 fun WidgetType.description(): String = when (this) {
-    WidgetType.TOTALE_USCITE        -> "Totale uscite del periodo selezionato"
-    WidgetType.TOTALE_ENTRATE       -> "Totale entrate del periodo selezionato"
-    WidgetType.SALDO_MESE           -> "Differenza entrate - uscite"
-    WidgetType.GRAFICO_TORTA        -> "Distribuzione spese per categoria"
-    WidgetType.ULTIMI_MOVIMENTI     -> "Gli ultimi N movimenti inseriti"
-    WidgetType.TOP_CATEGORIE        -> "Le categorie con più spese"
-    WidgetType.SALDO_CONTO          -> "Saldo cumulativo di un conto specifico"
-    WidgetType.ANDAMENTO_MENSILE    -> "Entrate e uscite degli ultimi 6 mesi"
-    WidgetType.CONFRONTO_MESE       -> "Mese corrente vs mese precedente"
-    WidgetType.RISPARMIO_CUMULATIVO -> "Risparmio netto degli ultimi 6 mesi"
+    WidgetType.TOTALE_USCITE     -> "Totale uscite del periodo selezionato"
+    WidgetType.TOTALE_ENTRATE    -> "Totale entrate del periodo selezionato"
+    WidgetType.SALDO_MESE        -> "Differenza entrate - uscite"
+    WidgetType.GRAFICO_TORTA     -> "Distribuzione spese per categoria"
+    WidgetType.ULTIMI_MOVIMENTI  -> "Gli ultimi N movimenti inseriti"
+    WidgetType.TOP_CATEGORIE     -> "Le categorie con più spese"
+    WidgetType.SALDO_CONTO       -> "Saldo cumulativo di un conto specifico"
+    WidgetType.ANDAMENTO_MENSILE -> "Grafico uscite degli ultimi 6 mesi"
 }
 
 fun WidgetType.icon(): ImageVector = when (this) {
-    WidgetType.TOTALE_USCITE        -> Icons.Default.TrendingDown
-    WidgetType.TOTALE_ENTRATE       -> Icons.Default.TrendingUp
-    WidgetType.SALDO_MESE           -> Icons.Default.AccountBalance
-    WidgetType.GRAFICO_TORTA        -> Icons.Default.PieChart
-    WidgetType.ULTIMI_MOVIMENTI     -> Icons.Default.List
-    WidgetType.TOP_CATEGORIE        -> Icons.Default.BarChart
-    WidgetType.SALDO_CONTO          -> Icons.Default.Savings
-    WidgetType.ANDAMENTO_MENSILE    -> Icons.Default.BarChart
-    WidgetType.CONFRONTO_MESE       -> Icons.Default.CompareArrows
-    WidgetType.RISPARMIO_CUMULATIVO -> Icons.Default.ShowChart
+    WidgetType.TOTALE_USCITE     -> Icons.Default.TrendingDown
+    WidgetType.TOTALE_ENTRATE    -> Icons.Default.TrendingUp
+    WidgetType.SALDO_MESE        -> Icons.Default.AccountBalance
+    WidgetType.GRAFICO_TORTA     -> Icons.Default.PieChart
+    WidgetType.ULTIMI_MOVIMENTI  -> Icons.Default.List
+    WidgetType.TOP_CATEGORIE     -> Icons.Default.BarChart
+    WidgetType.SALDO_CONTO       -> Icons.Default.Savings
+    WidgetType.ANDAMENTO_MENSILE -> Icons.Default.BarChart
 }

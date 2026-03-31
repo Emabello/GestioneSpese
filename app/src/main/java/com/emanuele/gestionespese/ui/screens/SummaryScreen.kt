@@ -69,13 +69,9 @@ private class DragDropState(
 ) {
     var draggedIndex by mutableStateOf<Int?>(null)
     var dragOffsetY  by mutableFloatStateOf(0f)
-    // Altezza per-indice: ogni widget può avere altezza diversa
-    private val itemHeightsPx = mutableMapOf<Int, Float>()
+    private var itemHeightPx = 0f
 
-    fun setItemHeight(index: Int, px: Float) { if (px > 0f) itemHeightsPx[index] = px }
-
-    private fun getThreshold(idx: Int): Float =
-        (itemHeightsPx[idx] ?: 160f) * 0.5f
+    fun setItemHeight(px: Float) { if (px > 0f) itemHeightPx = px }
 
     fun onDragStart(index: Int) {
         draggedIndex = index
@@ -85,17 +81,17 @@ private class DragDropState(
     fun onDrag(deltaY: Float) {
         val idx = draggedIndex ?: return
         dragOffsetY += deltaY
-        val threshold = getThreshold(idx)
+        val threshold = if (itemHeightPx > 0f) itemHeightPx * 0.5f else 80f
         when {
             dragOffsetY > threshold && idx < items.size - 1 -> {
                 items.add(idx + 1, items.removeAt(idx))
                 draggedIndex = idx + 1
-                dragOffsetY -= (itemHeightsPx[idx] ?: threshold * 2)
+                dragOffsetY -= (if (itemHeightPx > 0f) itemHeightPx else threshold * 2)
             }
             dragOffsetY < -threshold && idx > 0 -> {
                 items.add(idx - 1, items.removeAt(idx))
                 draggedIndex = idx - 1
-                dragOffsetY += (itemHeightsPx[idx] ?: threshold * 2)
+                dragOffsetY += (if (itemHeightPx > 0f) itemHeightPx else threshold * 2)
             }
         }
     }
@@ -203,9 +199,7 @@ fun SummaryScreen(
                 Spacer(Modifier.height(8.dp))
 
                 WidgetType.entries.forEach { type ->
-                    // SALDO_CONTO può essere aggiunto più volte (uno per conto)
-                    val alreadyAdded = if (type == WidgetType.SALDO_CONTO) false
-                                       else dashState.widgets.any { it.type == type }
+                    val alreadyAdded = dashState.widgets.any { it.type == type }
                     ElevatedCard(
                         modifier  = Modifier.fillMaxWidth(),
                         colors    = CardDefaults.elevatedCardColors(
@@ -662,11 +656,12 @@ fun SummaryScreen(
                                 scaleX = if (isDragging) 1.02f else 1f
                                 scaleY = if (isDragging) 1.02f else 1f
                             }
-                            .onSizeChanged { dragDropState.setItemHeight(index, it.height.toFloat()) }
+                            .onSizeChanged { dragDropState.setItemHeight(it.height.toFloat()) }
                     ) {
                         WidgetRenderer(
                             config   = widget,
-                            spese    = state.spese,
+                            spese    = if (widget.type == WidgetType.SALDO_CONTO)
+                                state.spese else speseFiltered,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -695,7 +690,8 @@ fun SummaryScreen(
                                 ) {
                                     WidgetRenderer(
                                         config   = widget,
-                                        spese    = state.spese,
+                                        spese    = if (widget.type == WidgetType.SALDO_CONTO)
+                                            state.spese else speseFiltered,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
@@ -715,7 +711,8 @@ fun SummaryScreen(
                         ) {
                             WidgetRenderer(
                                 config   = widget,
-                                spese    = state.spese,
+                                spese    = if (widget.type == WidgetType.SALDO_CONTO)
+                                    state.spese else speseFiltered,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -758,8 +755,8 @@ private fun WidgetConfigSheet(
                 style = MaterialTheme.typography.titleLarge
             )
 
-            // Periodo (tutti tranne ANDAMENTO_MENSILE che usa sempre gli ultimi 6 mesi fissi)
-            if (config.type != WidgetType.ANDAMENTO_MENSILE) {
+            // Periodo (per tutti i widget eccetto SALDO_CONTO e ANDAMENTO_MENSILE)
+            if (config.type != WidgetType.SALDO_CONTO && config.type != WidgetType.ANDAMENTO_MENSILE) {
                 Text("Periodo", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -787,30 +784,17 @@ private fun WidgetConfigSheet(
                 )
             }
 
-            // Conto filter (solo per SALDO_CONTO) — mostrato sempre, con messaggio se vuoto
-            if (config.type == WidgetType.SALDO_CONTO) {
+            // Conto filter (solo per SALDO_CONTO)
+            if (config.type == WidgetType.SALDO_CONTO && conti.isNotEmpty()) {
                 Text("Conto da mostrare", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (conti.isEmpty()) {
-                    Text(
-                        "Nessun conto disponibile. Sincronizza i dati e riprova.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                conti.forEach { c ->
+                    val nomeC = c.substringAfter(" - ", c)
+                    FilterChip(
+                        selected = contoFilter == c,
+                        onClick  = { contoFilter = c },
+                        label    = { Text(nomeC) }
                     )
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        conti.forEach { c ->
-                            val nomeC = c.substringAfter(" - ", c)
-                            FilterChip(
-                                selected = contoFilter == c,
-                                onClick  = { contoFilter = c },
-                                label    = { Text(nomeC) }
-                            )
-                        }
-                    }
                 }
             }
 
@@ -923,7 +907,7 @@ private fun EditableWidgetWrapper(
                         )
                     }
 
-                    // ↔ Ridimensiona — icona cambia in base alla dimensione corrente
+                    // ↔ Ridimensiona
                     Box(
                         modifier = Modifier
                             .padding(2.dp)
@@ -938,9 +922,8 @@ private fun EditableWidgetWrapper(
                             modifier = Modifier.fillMaxSize()
                         ) { }
                         Icon(
-                            if (config.size == WidgetSize.WIDE) Icons.Default.CloseFullscreen
-                            else Icons.Default.OpenInFull,
-                            contentDescription = if (config.size == WidgetSize.WIDE) "Comprimi" else "Espandi",
+                            Icons.Default.OpenInFull,
+                            contentDescription = "Ridimensiona",
                             tint     = Color.White,
                             modifier = Modifier.size(14.dp)
                         )
