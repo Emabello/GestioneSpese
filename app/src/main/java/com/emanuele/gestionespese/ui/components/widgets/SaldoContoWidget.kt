@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.SpesaView
 import com.emanuele.gestionespese.data.model.WidgetConfig
+import com.emanuele.gestionespese.data.model.WidgetHeightStep
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.theme.Danger
 import com.emanuele.gestionespese.ui.theme.expenseContainer
@@ -88,42 +89,45 @@ fun SaldoContoWidget(
             fontWeight = FontWeight.Bold,
             color      = if (isPositive) Brand else Danger
         )
-        Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = Brand.copy(alpha = 0.10f)
-            ) {
-                Row(
-                    modifier          = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+        // M+: entrate e uscite del periodo
+        if (config.heightStep.ordinal >= WidgetHeightStep.M.ordinal) {
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = Brand.copy(alpha = 0.10f)
                 ) {
-                    Icon(Icons.Default.ArrowUpward, null,
-                        tint = Brand, modifier = Modifier.size(10.dp))
-                    Text(
-                        String.format(Locale.getDefault(), "%.0f €", entrateContoMese),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Brand
-                    )
+                    Row(
+                        modifier              = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(Icons.Default.ArrowUpward, null,
+                            tint = Brand, modifier = Modifier.size(10.dp))
+                        Text(
+                            String.format(Locale.getDefault(), "%.0f €", entrateContoMese),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Brand
+                        )
+                    }
                 }
-            }
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = Danger.copy(alpha = 0.10f)
-            ) {
-                Row(
-                    modifier          = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = Danger.copy(alpha = 0.10f)
                 ) {
-                    Icon(Icons.Default.ArrowDownward, null,
-                        tint = Danger, modifier = Modifier.size(10.dp))
-                    Text(
-                        String.format(Locale.getDefault(), "%.0f €", usciteContoMese),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Danger
-                    )
+                    Row(
+                        modifier              = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(Icons.Default.ArrowDownward, null,
+                            tint = Danger, modifier = Modifier.size(10.dp))
+                        Text(
+                            String.format(Locale.getDefault(), "%.0f €", usciteContoMese),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Danger
+                        )
+                    }
                 }
             }
         }
