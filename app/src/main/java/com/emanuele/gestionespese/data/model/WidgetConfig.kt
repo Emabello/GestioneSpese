@@ -26,11 +26,7 @@ enum class WidgetType {
     /** Saldo di uno specifico conto (tutti i tempi). */
     SALDO_CONTO,
     /** Grafico a barre dell'andamento mensile (ultimi 6 mesi). */
-    ANDAMENTO_MENSILE,
-    /** Confronto uscite/entrate mese corrente vs mese precedente. */
-    CONFRONTO_MESE,
-    /** Grafico lineare del risparmio netto cumulativo degli ultimi 6 mesi. */
-    RISPARMIO_CUMULATIVO
+    ANDAMENTO_MENSILE
 }
 
 /** Dimensione del widget nella griglia della dashboard (2 colonne). */

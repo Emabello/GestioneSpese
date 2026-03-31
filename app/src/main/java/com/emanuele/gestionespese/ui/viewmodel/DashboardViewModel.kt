@@ -80,7 +80,7 @@ class DashboardViewModel(
     fun saveLayout(widgets: List<WidgetConfig>) {
         viewModelScope.launch {
             val reordered = widgets.mapIndexed { i, w -> w.copy(position = i) }
-            _state.update { it.copy(widgets = reordered) }
+            _state.update { it.copy(widgets = reordered, isEditMode = false) }
             repo.saveLayout(utente, reordered)
             repo.syncToRemote(utente, reordered)
         }
