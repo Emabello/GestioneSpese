@@ -20,13 +20,15 @@ fun WidgetRenderer(
     modifier: Modifier = Modifier
 ) {
     when (config.type) {
-        WidgetType.TOTALE_USCITE    -> TotaleUsciteWidget(config, spese, modifier)
-        WidgetType.TOTALE_ENTRATE   -> TotaleEntrateWidget(config, spese, modifier)
-        WidgetType.SALDO_MESE       -> SaldoMeseWidget(config, spese, modifier)
-        WidgetType.GRAFICO_TORTA    -> GraficoTortaWidget(config, spese, modifier)
-        WidgetType.ULTIMI_MOVIMENTI -> UltimiMovimentiWidget(config, spese, modifier)
-        WidgetType.TOP_CATEGORIE    -> TopCategorieWidget(config, spese, modifier)
-        WidgetType.SALDO_CONTO      -> SaldoContoWidget(config, spese, modifier)
-        WidgetType.ANDAMENTO_MENSILE -> AndamentoMensileWidget(config, spese, modifier)
+        WidgetType.TOTALE_USCITE       -> TotaleUsciteWidget(config, spese, modifier)
+        WidgetType.TOTALE_ENTRATE      -> TotaleEntrateWidget(config, spese, modifier)
+        WidgetType.SALDO_MESE          -> SaldoMeseWidget(config, spese, modifier)
+        WidgetType.GRAFICO_TORTA       -> GraficoTortaWidget(config, spese, modifier)
+        WidgetType.ULTIMI_MOVIMENTI    -> UltimiMovimentiWidget(config, spese, modifier)
+        WidgetType.TOP_CATEGORIE       -> TopCategorieWidget(config, spese, modifier)
+        WidgetType.SALDO_CONTO         -> SaldoContoWidget(config, spese, modifier)
+        WidgetType.ANDAMENTO_MENSILE   -> AndamentoMensileWidget(config, spese, modifier)
+        WidgetType.CONFRONTO_MESE      -> ConfrontoMeseWidget(config, spese, modifier)
+        WidgetType.RISPARMIO_CUMULATIVO -> RisparmioCumulativoWidget(config, spese, modifier)
     }
 }
