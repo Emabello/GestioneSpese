@@ -31,7 +31,7 @@ fun UltimiMovimentiWidget(
 ) {
     val ultimi = remember(spese, config.topN, config.periodo) {
         spese.filteredByPeriodo(config.periodo)
-            .sortedByDescending { it.data }
+            .sortedByDescending { parseDataPerOrdine(it.data) }
             .take(config.topN)
     }
 
@@ -97,6 +97,16 @@ fun UltimiMovimentiWidget(
             }
         }
     }
+}
+
+private fun parseDataPerOrdine(data: String?): LocalDate {
+    if (data.isNullOrBlank()) return LocalDate.MIN
+    return try {
+        if (data.contains("/"))
+            LocalDate.parse(data, DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+        else
+            LocalDate.parse(data, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+    } catch (e: Exception) { LocalDate.MIN }
 }
 
 private fun formatDataBreve(data: String?): String {
