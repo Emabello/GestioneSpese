@@ -83,6 +83,14 @@ fun HomeScreen(
             val okTipo   = f.tipo?.let   { it == tipoSafe }          ?: true
             val okMetodo = f.metodo?.let { it == metodoSafe }        ?: true
             okQuery && okMese && okTipo && okMetodo
+        }.sortedByDescending { s ->
+            val data = s.data ?: ""
+            try {
+                if (data.contains("/"))
+                    java.time.LocalDate.parse(data, java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                else
+                    java.time.LocalDate.parse(data, java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+            } catch (e: Exception) { java.time.LocalDate.MIN }
         }
     }
 

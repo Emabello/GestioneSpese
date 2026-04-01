@@ -109,12 +109,12 @@ private fun groupWidgets(widgets: List<WidgetConfig>): List<List<WidgetConfig>> 
     var i = 0
     while (i < widgets.size) {
         val current = widgets[i]
-        if (current.size == WidgetSize.WIDE) {
+        if (current.colSpan >= 6) {
             rows.add(listOf(current))
             i++
         } else {
             val next = widgets.getOrNull(i + 1)
-            if (next != null && next.size == WidgetSize.SMALL) {
+            if (next != null && next.colSpan < 6 && current.colSpan + next.colSpan <= 6) {
                 rows.add(listOf(current, next))
                 i += 2
             } else {
@@ -160,6 +160,22 @@ fun SummaryScreen(
                     LocalDate.parse(data, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
                 }
                 d.year == selectedYear && d.monthValue == selectedMonth
+            } catch (e: Exception) { false }
+        }
+    }
+
+    // Spese del mese precedente (per confronto % nei widget)
+    val spesePrevMonth = remember(state.spese, selectedYear, selectedMonth) {
+        val prevDate = LocalDate.of(selectedYear, selectedMonth, 1).minusMonths(1)
+        state.spese.filter { s ->
+            val data = s.data ?: return@filter false
+            try {
+                val d = if (data.contains("/")) {
+                    LocalDate.parse(data, DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                } else {
+                    LocalDate.parse(data, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+                }
+                d.year == prevDate.year && d.monthValue == prevDate.monthValue
             } catch (e: Exception) { false }
         }
     }
@@ -215,12 +231,10 @@ fun SummaryScreen(
                             if (!alreadyAdded) {
                                 dashVm.addWidget(
                                     WidgetConfig(
-                                        type     = type,
-                                        size     = if (type == WidgetType.TOTALE_USCITE ||
-                                            type == WidgetType.TOTALE_ENTRATE ||
-                                            type == WidgetType.SALDO_CONTO)
-                                            WidgetSize.SMALL else WidgetSize.WIDE,
-                                        position = dashState.widgets.size
+                                        type       = type,
+                                        colSpan    = type.defaultColSpan(),
+                                        heightStep = type.defaultHeightStep(),
+                                        position   = dashState.widgets.size
                                     )
                                 )
                                 showAddPopup = false
@@ -350,10 +364,8 @@ fun SummaryScreen(
             dashState.widgets.sortedBy { it.position }.toMutableStateList()
         }
         LaunchedEffect(dashState.widgets) {
-            if (!editMode) {
-                widgetList.clear()
-                widgetList.addAll(dashState.widgets.sortedBy { it.position })
-            }
+            widgetList.clear()
+            widgetList.addAll(dashState.widgets.sortedBy { it.position })
         }
 
         val listState    = rememberLazyListState()
@@ -659,10 +671,11 @@ fun SummaryScreen(
                             .onSizeChanged { dragDropState.setItemHeight(it.height.toFloat()) }
                     ) {
                         WidgetRenderer(
-                            config   = widget,
-                            spese    = if (widget.type == WidgetType.SALDO_CONTO)
-                                state.spese else speseFiltered,
-                            modifier = Modifier.fillMaxWidth()
+                            config         = widget,
+                            spese          = speseFiltered,
+                            spesePrevMonth = spesePrevMonth,
+                            speseAll       = state.spese,
+                            modifier       = Modifier.fillMaxWidth()
                         )
                     }
                 }
@@ -735,7 +748,6 @@ private fun WidgetConfigSheet(
     onSave: (WidgetConfig) -> Unit,
     sheetState: SheetState
 ) {
-    var periodo     by remember(config) { mutableStateOf(config.periodo) }
     var topN        by remember(config) { mutableIntStateOf(config.topN) }
     var contoFilter by remember(config) { mutableStateOf(config.contoFilter ?: "") }
 
@@ -754,21 +766,6 @@ private fun WidgetConfigSheet(
                 "Configura: ${config.type.displayName()}",
                 style = MaterialTheme.typography.titleLarge
             )
-
-            // Periodo (per tutti i widget eccetto SALDO_CONTO e ANDAMENTO_MENSILE)
-            if (config.type != WidgetType.SALDO_CONTO && config.type != WidgetType.ANDAMENTO_MENSILE) {
-                Text("Periodo", style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    WidgetPeriodo.entries.forEach { p ->
-                        FilterChip(
-                            selected = periodo == p,
-                            onClick  = { periodo = p },
-                            label    = { Text(p.label()) }
-                        )
-                    }
-                }
-            }
 
             // TopN (solo per TOP_CATEGORIE e ULTIMI_MOVIMENTI)
             if (config.type == WidgetType.TOP_CATEGORIE || config.type == WidgetType.ULTIMI_MOVIMENTI) {
@@ -806,7 +803,6 @@ private fun WidgetConfigSheet(
                 Button(
                     onClick = {
                         onSave(config.copy(
-                            periodo     = periodo,
                             topN        = topN,
                             contoFilter = contoFilter.takeIf { it.isNotBlank() }
                         ))
@@ -842,6 +838,54 @@ private fun EditableWidgetWrapper(
         )
     ) {
         content()
+
+        // Angoli in grassetto visibili solo in edit mode (indicatori resize)
+        if (editMode) {
+            val cornerColor = Brand
+            val cornerLen = 14.dp
+            val cornerStroke = 3.dp
+            // Angolo in basso a destra – tappabile per resize
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(cornerLen)
+                    .combinedClickable(onClick = onResize)
+            ) {
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                    val s = cornerStroke.toPx()
+                    val w = size.width
+                    val h = size.height
+                    drawLine(cornerColor, androidx.compose.ui.geometry.Offset(0f, h), androidx.compose.ui.geometry.Offset(w, h), strokeWidth = s)
+                    drawLine(cornerColor, androidx.compose.ui.geometry.Offset(w, 0f), androidx.compose.ui.geometry.Offset(w, h), strokeWidth = s)
+                }
+            }
+            // Angolo in basso a sinistra
+            Box(modifier = Modifier.align(Alignment.BottomStart).size(cornerLen)) {
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                    val s = cornerStroke.toPx()
+                    val h = size.height
+                    drawLine(cornerColor, androidx.compose.ui.geometry.Offset(0f, h), androidx.compose.ui.geometry.Offset(size.width, h), strokeWidth = s)
+                    drawLine(cornerColor, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(0f, h), strokeWidth = s)
+                }
+            }
+            // Angolo in alto a destra
+            Box(modifier = Modifier.align(Alignment.TopEnd).size(cornerLen)) {
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                    val s = cornerStroke.toPx()
+                    val w = size.width
+                    drawLine(cornerColor, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(w, 0f), strokeWidth = s)
+                    drawLine(cornerColor, androidx.compose.ui.geometry.Offset(w, 0f), androidx.compose.ui.geometry.Offset(w, size.height), strokeWidth = s)
+                }
+            }
+            // Angolo in alto a sinistra
+            Box(modifier = Modifier.align(Alignment.TopStart).size(cornerLen)) {
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                    val s = cornerStroke.toPx()
+                    drawLine(cornerColor, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(size.width, 0f), strokeWidth = s)
+                    drawLine(cornerColor, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(0f, size.height), strokeWidth = s)
+                }
+            }
+        }
 
         // Barra superiore edit mode: drag handle + config + delete
         AnimatedVisibility(
@@ -885,48 +929,30 @@ private fun EditableWidgetWrapper(
                 }
 
                 Row {
-                    // ⚙ Configura
-                    Box(
-                        modifier = Modifier
-                            .padding(2.dp)
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .combinedClickable(onClick = onConfigure),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Surface(
-                            shape    = CircleShape,
-                            color    = MaterialTheme.colorScheme.secondaryContainer,
-                            modifier = Modifier.fillMaxSize()
-                        ) { }
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Configura",
-                            tint     = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-
-                    // ↔ Ridimensiona
-                    Box(
-                        modifier = Modifier
-                            .padding(2.dp)
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .combinedClickable(onClick = onResize),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Surface(
-                            shape    = CircleShape,
-                            color    = Brand,
-                            modifier = Modifier.fillMaxSize()
-                        ) { }
-                        Icon(
-                            Icons.Default.OpenInFull,
-                            contentDescription = "Ridimensiona",
-                            tint     = Color.White,
-                            modifier = Modifier.size(14.dp)
-                        )
+                    // ⚙ Configura (solo per widget con opzioni: SALDO_CONTO, TOP_CATEGORIE, ULTIMI_MOVIMENTI)
+                    if (config.type == WidgetType.SALDO_CONTO ||
+                        config.type == WidgetType.TOP_CATEGORIE ||
+                        config.type == WidgetType.ULTIMI_MOVIMENTI) {
+                        Box(
+                            modifier = Modifier
+                                .padding(2.dp)
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .combinedClickable(onClick = onConfigure),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Surface(
+                                shape    = CircleShape,
+                                color    = MaterialTheme.colorScheme.secondaryContainer,
+                                modifier = Modifier.fillMaxSize()
+                            ) { }
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = "Configura",
+                                tint     = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
 
                     // ✕ Elimina
