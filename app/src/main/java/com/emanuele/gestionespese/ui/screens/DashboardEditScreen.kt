@@ -22,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.emanuele.gestionespese.data.model.*
-import com.emanuele.gestionespese.ui.components.widgets.label
 import com.emanuele.gestionespese.ui.theme.Brand
 import com.emanuele.gestionespese.ui.viewmodel.DashboardViewModel
 
@@ -51,11 +50,10 @@ fun DashboardEditScreen(
                                 if (!alreadyAdded) {
                                     dashVm.addWidget(
                                         WidgetConfig(
-                                            type     = type,
-                                            size     = if (type == WidgetType.TOTALE_USCITE ||
-                                                type == WidgetType.TOTALE_ENTRATE)
-                                                WidgetSize.SMALL else WidgetSize.WIDE,
-                                            position = widgets.size
+                                            type       = type,
+                                            colSpan    = type.defaultColSpan(),
+                                            heightStep = type.defaultHeightStep(),
+                                            position   = widgets.size
                                         )
                                     )
                                 }
@@ -129,7 +127,7 @@ fun DashboardEditScreen(
                                 style = MaterialTheme.typography.titleSmall
                             )
                             Text(
-                                "${widget.size.name.lowercase()} · ${widget.periodo.label()}",
+                                "colSpan: ${widget.colSpan}/6",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
