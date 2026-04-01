@@ -1,16 +1,15 @@
 /**
  * TotaleEntrateWidget.kt
  *
- * Widget della dashboard che mostra il totale delle entrate nel periodo selezionato.
+ * Widget della dashboard che mostra il totale delle entrate nel mese selezionato.
  * Layout adattivo in base a heightStep:
- * - S: importo + badge periodo + icona
- * - M: + confronto % con periodo precedente
- * - L: + breakdown top 3 fonti di entrata (per categoria)
+ * - S: importo + icona
+ * - M: + confronto % con mese precedente
+ * - L: + breakdown top 3 fonti di entrata
  */
 package com.emanuele.gestionespese.ui.components.widgets
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.TrendingDown
 import androidx.compose.material.icons.filled.TrendingUp
@@ -33,17 +32,15 @@ import java.util.Locale
 fun TotaleEntrateWidget(
     config: WidgetConfig,
     spese: List<SpesaView>,
+    spesePrevMonth: List<SpesaView>,
     modifier: Modifier = Modifier
 ) {
-    val filtered = remember(spese, config.periodo) { spese.filteredByPeriodo(config.periodo) }
-    val totale   = remember(filtered) {
-        filtered.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo }
+    val totale = remember(spese) {
+        spese.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo }
     }
 
-    // M/L: confronto con periodo precedente
-    val prevFiltered = remember(spese, config.periodo) { spese.filteredPrevPeriodo(config.periodo) }
-    val totalePrev   = remember(prevFiltered) {
-        prevFiltered.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo }
+    val totalePrev = remember(spesePrevMonth) {
+        spesePrevMonth.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo }
     }
     val delta = remember(totale, totalePrev) {
         if (totalePrev > 0) ((totale - totalePrev) / totalePrev * 100).toInt() else Int.MIN_VALUE
@@ -54,29 +51,17 @@ fun TotaleEntrateWidget(
         modifier  = modifier,
         cardColor = MaterialTheme.incomeContainer
     ) {
-        // S: layout base — numero + badge + icona
         Row(
             modifier              = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment     = Alignment.Top
         ) {
-            Column {
-                Text(
-                    text       = String.format(Locale.getDefault(), "%.2f €", totale),
-                    style      = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color      = Brand
-                )
-                Spacer(Modifier.height(4.dp))
-                Surface(shape = RoundedCornerShape(6.dp), color = Brand.copy(alpha = 0.12f)) {
-                    Text(
-                        text     = config.periodo.label(),
-                        style    = MaterialTheme.typography.labelSmall,
-                        color    = Brand,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
+            Text(
+                text       = String.format(Locale.getDefault(), "%.2f €", totale),
+                style      = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color      = Brand
+            )
             Icon(
                 imageVector        = Icons.Default.TrendingUp,
                 contentDescription = null,
@@ -85,10 +70,10 @@ fun TotaleEntrateWidget(
             )
         }
 
-        // M+: riga confronto con periodo precedente
+        // M+: riga confronto con mese precedente
         if (config.heightStep.ordinal >= WidgetHeightStep.M.ordinal && delta != Int.MIN_VALUE) {
             Spacer(Modifier.height(8.dp))
-            val isGood = delta > 0  // guadagnare di più è positivo
+            val isGood = delta > 0
             Row(
                 verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -100,7 +85,7 @@ fun TotaleEntrateWidget(
                     modifier           = Modifier.size(14.dp)
                 )
                 Text(
-                    text  = "${if (delta >= 0) "+" else ""}$delta% vs periodo prec.",
+                    text  = "${if (delta >= 0) "+" else ""}$delta% vs mese prec.",
                     style = MaterialTheme.typography.labelSmall,
                     color = if (isGood) Brand else Danger
                 )
@@ -109,8 +94,8 @@ fun TotaleEntrateWidget(
 
         // L: top 3 fonti di entrata
         if (config.heightStep == WidgetHeightStep.L) {
-            val top3 = remember(filtered) {
-                filtered.filter { it.isEntrata() && !it.isTransfer() }
+            val top3 = remember(spese) {
+                spese.filter { it.isEntrata() && !it.isTransfer() }
                     .groupBy { it.categoria?.trim() ?: "Altro" }
                     .mapValues { (_, v) -> v.sumOf { it.importo } }
                     .entries.sortedByDescending { it.value }.take(3)

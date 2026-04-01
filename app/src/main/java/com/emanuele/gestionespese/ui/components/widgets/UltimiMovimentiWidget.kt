@@ -29,9 +29,9 @@ fun UltimiMovimentiWidget(
     spese: List<SpesaView>,
     modifier: Modifier = Modifier
 ) {
-    val ultimi = remember(spese, config.topN, config.periodo) {
-        spese.filteredByPeriodo(config.periodo)
-            .sortedByDescending { parseDataPerOrdine(it.data) }
+    // spese è già filtrato per il mese selezionato
+    val ultimi = remember(spese, config.topN) {
+        spese.sortedByDescending { parseDataPerOrdine(it.data) }
             .take(config.topN)
     }
 
