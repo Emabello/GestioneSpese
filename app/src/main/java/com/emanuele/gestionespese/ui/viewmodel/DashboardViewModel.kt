@@ -13,6 +13,7 @@ import com.emanuele.gestionespese.data.model.WidgetConfig
 import com.emanuele.gestionespese.data.model.WidgetHeightStep
 import com.emanuele.gestionespese.data.model.VALID_COL_SPANS
 import com.emanuele.gestionespese.data.model.defaultDashboardLayout
+import com.emanuele.gestionespese.data.model.minColSpan
 import com.emanuele.gestionespese.data.repo.DashboardRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
