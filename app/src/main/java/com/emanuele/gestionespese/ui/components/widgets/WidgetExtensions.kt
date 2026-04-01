@@ -94,6 +94,35 @@ fun List<SpesaView>.saldoPerConto(conto: String, initialBalance: Double = 0.0): 
     return initialBalance + entrate - uscite - trasfUsciti + trasfEntratiInConto
 }
 
+/** Filtra la lista di movimenti nel periodo immediatamente precedente a quello specificato. */
+fun List<SpesaView>.filteredPrevPeriodo(periodo: WidgetPeriodo): List<SpesaView> {
+    val today = LocalDate.now()
+    return when (periodo) {
+        WidgetPeriodo.MESE_CORRENTE -> {
+            val prev = today.minusMonths(1)
+            filter { spesa ->
+                val d = parseDataFlessibile(spesa.data) ?: return@filter false
+                d.year == prev.year && d.monthValue == prev.monthValue
+            }
+        }
+        WidgetPeriodo.ULTIMI_30_GIORNI -> {
+            val from = today.minusDays(60)
+            val to   = today.minusDays(30)
+            filter { spesa ->
+                val d = parseDataFlessibile(spesa.data) ?: return@filter false
+                !d.isBefore(from) && d.isBefore(to)
+            }
+        }
+        WidgetPeriodo.ANNO_CORRENTE -> {
+            val prevYear = today.year - 1
+            filter { spesa ->
+                val d = parseDataFlessibile(spesa.data) ?: return@filter false
+                d.year == prevYear
+            }
+        }
+    }
+}
+
 /** Restituisce l'etichetta breve del periodo per la UI (es. `"mese"`, `"30gg"`, `"anno"`). */
 fun WidgetPeriodo.label(): String = when (this) {
     WidgetPeriodo.MESE_CORRENTE    -> "mese"

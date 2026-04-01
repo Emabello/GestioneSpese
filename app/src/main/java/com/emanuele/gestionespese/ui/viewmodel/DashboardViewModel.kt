@@ -1,42 +1,31 @@
 /**
  * DashboardViewModel.kt
  *
- * ViewModel per la dashboard personalizzabile. Gestisce il layout corrente
- * dei widget e le operazioni di modifica (aggiunta, rimozione, riordino,
- * cambio dimensione). Persiste le modifiche tramite [DashboardRepository].
+ * ViewModel per la dashboard personalizzabile a griglia (6 colonne).
+ * Gestisce il layout corrente dei widget e le operazioni di modifica:
+ * aggiunta, rimozione, riordino, resize larghezza (colSpan) e altezza (heightStep).
  */
 package com.emanuele.gestionespese.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.emanuele.gestionespese.data.model.WidgetConfig
-import com.emanuele.gestionespese.data.model.WidgetSize
+import com.emanuele.gestionespese.data.model.WidgetHeightStep
+import com.emanuele.gestionespese.data.model.VALID_COL_SPANS
 import com.emanuele.gestionespese.data.model.defaultDashboardLayout
+import com.emanuele.gestionespese.data.model.minColSpan
 import com.emanuele.gestionespese.data.repo.DashboardRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/**
- * Stato UI della dashboard.
- *
- * @property widgets    Lista ordinata dei widget da visualizzare.
- * @property isLoading  `true` durante il caricamento del layout.
- * @property isEditMode `true` quando la modalità di modifica è attiva.
- */
 data class DashboardUiState(
     val widgets: List<WidgetConfig> = defaultDashboardLayout(),
     val isLoading: Boolean = false,
     val isEditMode: Boolean = false
 )
 
-/**
- * ViewModel per la gestione del layout della dashboard.
- *
- * @param repo   Repository per la persistenza locale e la sync remota.
- * @param utente ID dell'utente corrente.
- */
 class DashboardViewModel(
     private val repo: DashboardRepository,
     private val utente: String
@@ -49,14 +38,11 @@ class DashboardViewModel(
         loadLayout()
     }
 
-    /** Carica il layout dal repository (Room) e poi sincronizza dal remoto. */
     fun loadLayout() {
         viewModelScope.launch {
             _state.update { it.copy(isLoading = true) }
-            // Carica subito da Room
             val local = repo.getLayout(utente)
             _state.update { it.copy(widgets = local, isLoading = false) }
-            // Poi allinea dal server (aggiorna se il server ha una versione più recente)
             if (utente.isNotBlank()) {
                 runCatching { repo.syncFromRemote(utente) }
                     .onSuccess {
@@ -67,16 +53,10 @@ class DashboardViewModel(
         }
     }
 
-    /** Attiva o disattiva la modalità di modifica della dashboard. */
     fun toggleEditMode() {
         _state.update { it.copy(isEditMode = !it.isEditMode) }
     }
 
-    /**
-     * Salva il layout aggiornato (ricalcola le posizioni) e lo sincronizza sul backend.
-     *
-     * @param widgets Lista dei widget nell'ordine desiderato.
-     */
     fun saveLayout(widgets: List<WidgetConfig>) {
         viewModelScope.launch {
             val reordered = widgets.mapIndexed { i, w -> w.copy(position = i) }
@@ -86,81 +66,56 @@ class DashboardViewModel(
         }
     }
 
-    /**
-     * Rimuove un widget dal layout per ID.
-     *
-     * @param id ID del widget da rimuovere.
-     */
     fun removeWidget(id: String) {
-        val updated = _state.value.widgets.filter { it.id != id }
-        saveLayout(updated)
+        saveLayout(_state.value.widgets.filter { it.id != id })
     }
 
-    /**
-     * Aggiunge un widget in fondo al layout corrente.
-     *
-     * @param widget Configurazione del nuovo widget.
-     */
     fun addWidget(widget: WidgetConfig) {
-        val updated = _state.value.widgets + widget
-        saveLayout(updated)
+        saveLayout(_state.value.widgets + widget)
     }
 
-    /**
-     * Sposta un widget di una posizione verso l'alto nella lista.
-     *
-     * @param id ID del widget da spostare.
-     */
     fun moveUp(id: String) {
         val list = _state.value.widgets.toMutableList()
         val idx  = list.indexOfFirst { it.id == id }
         if (idx > 0) {
-            val tmp = list[idx - 1]
-            list[idx - 1] = list[idx]
-            list[idx] = tmp
+            val tmp = list[idx - 1]; list[idx - 1] = list[idx]; list[idx] = tmp
             saveLayout(list)
         }
     }
 
-    /**
-     * Sposta un widget di una posizione verso il basso nella lista.
-     *
-     * @param id ID del widget da spostare.
-     */
     fun moveDown(id: String) {
         val list = _state.value.widgets.toMutableList()
         val idx  = list.indexOfFirst { it.id == id }
         if (idx < list.size - 1) {
-            val tmp = list[idx + 1]
-            list[idx + 1] = list[idx]
-            list[idx] = tmp
+            val tmp = list[idx + 1]; list[idx + 1] = list[idx]; list[idx] = tmp
             saveLayout(list)
         }
     }
 
     /**
-     * Alterna la dimensione del widget tra [WidgetSize.WIDE] e [WidgetSize.SMALL].
-     *
-     * @param id ID del widget di cui cambiare la dimensione.
+     * Imposta il numero di colonne occupate dal widget (2 | 3 | 4 | 6).
+     * Il valore viene clampato ai valori validi e al minColSpan del tipo.
      */
-    fun toggleSize(id: String) {
+    fun setColSpan(id: String, cols: Int) {
+        val snapped = VALID_COL_SPANS.minByOrNull { kotlin.math.abs(it - cols) } ?: cols
         val updated = _state.value.widgets.map { w ->
-            if (w.id == id) w.copy(
-                size = if (w.size == WidgetSize.WIDE) WidgetSize.SMALL else WidgetSize.WIDE
-            ) else w
+            if (w.id == id) w.copy(colSpan = snapped.coerceAtLeast(w.type.minColSpan()))
+            else w
         }
         saveLayout(updated)
     }
 
     /**
-     * Aggiorna la configurazione di un widget specifico (periodo, topN, contoFilter, ecc.)
-     * e persiste il layout aggiornato.
-     *
-     * @param id     ID del widget da aggiornare.
-     * @param config Nuova configurazione da applicare al widget.
+     * Imposta lo step di altezza del widget (S / M / L).
      */
-    fun updateWidgetConfig(id: String, config: WidgetConfig) {
-        val updated = _state.value.widgets.map { w -> if (w.id == id) config else w }
+    fun setHeightStep(id: String, step: WidgetHeightStep) {
+        val updated = _state.value.widgets.map { w ->
+            if (w.id == id) w.copy(heightStep = step) else w
+        }
         saveLayout(updated)
+    }
+
+    fun updateWidgetConfig(id: String, config: WidgetConfig) {
+        saveLayout(_state.value.widgets.map { w -> if (w.id == id) config else w })
     }
 }

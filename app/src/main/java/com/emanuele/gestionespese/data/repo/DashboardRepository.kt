@@ -1,12 +1,11 @@
 /**
  * DashboardRepository.kt
  *
- * Repository per il layout personalizzato della dashboard. Gestisce:
- * - La persistenza locale del layout in Room ([DashboardDao])
- * - La sincronizzazione bidirezionale con il backend remoto ([SupabaseApi])
+ * Repository per il layout personalizzato della dashboard.
+ * Gestisce la persistenza locale (Room) e la sync remota (API).
  *
- * Il layout è serializzato/deserializzato come JSON di `List<WidgetConfig>` tramite Gson.
- * In caso di errori di sync o parsing, viene sempre restituito il [defaultDashboardLayout].
+ * Backward-compatibility: i JSON salvati con il vecchio sistema SMALL/WIDE
+ * vengono automaticamente migrati al nuovo sistema colSpan/heightStep.
  */
 package com.emanuele.gestionespese.data.repo
 
@@ -14,104 +13,132 @@ import com.emanuele.gestionespese.data.local.DashboardDao
 import com.emanuele.gestionespese.data.local.entities.DashboardEntity
 import com.emanuele.gestionespese.data.model.SaveDashboardRequest
 import com.emanuele.gestionespese.data.model.WidgetConfig
+import com.emanuele.gestionespese.data.model.WidgetHeightStep
+import com.emanuele.gestionespese.data.model.WidgetType
+import com.emanuele.gestionespese.data.model.defaultColSpan
 import com.emanuele.gestionespese.data.model.defaultDashboardLayout
+import com.emanuele.gestionespese.data.model.defaultHeightStep
 import com.emanuele.gestionespese.data.remote.SupabaseApi
 import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
 
-/**
- * Gestisce la persistenza e la sincronizzazione del layout della dashboard.
- *
- * @param dao DAO Room per la tabella `dashboard`.
- * @param api Client API per la sincronizzazione remota.
- */
 class DashboardRepository(
     private val dao: DashboardDao,
     private val api: SupabaseApi
 ) {
     private val gson = Gson()
 
-    // ── ROOM ─────────────────────────────────────────────────────────────
+    // ── ROOM ─────────────────────────────────────────────────────────────────
 
-    /**
-     * Carica il layout della dashboard dal DB locale.
-     * Se non è ancora stato salvato o il JSON non è valido, restituisce [defaultDashboardLayout].
-     *
-     * @param utente ID dell'utente.
-     * @return Lista di [WidgetConfig] ordinata per posizione.
-     */
     suspend fun getLayout(utente: String): List<WidgetConfig> {
-        val entity = dao.getByUtente(utente)
-        if (entity == null) return defaultDashboardLayout()
-        return try {
-            val type = object : TypeToken<List<WidgetConfig>>() {}.type
-            gson.fromJson(entity.layoutJson, type) ?: defaultDashboardLayout()
-        } catch (e: Exception) {
-            defaultDashboardLayout()
-        }
+        val entity = dao.getByUtente(utente) ?: return defaultDashboardLayout()
+        return parseLayoutJson(entity.layoutJson)
     }
 
-    /**
-     * Salva il layout nel DB locale (e poi sincronizza in background).
-     *
-     * @param utente  ID dell'utente.
-     * @param widgets Lista di widget da salvare.
-     */
     suspend fun saveLayout(utente: String, widgets: List<WidgetConfig>) {
         val json = gson.toJson(widgets)
         dao.upsert(DashboardEntity(utente = utente, layoutJson = json))
     }
 
-    // ── SYNC remoto → Room ───────────────────────────────────────────────
+    // ── SYNC remoto → Room ───────────────────────────────────────────────────
 
-    /**
-     * Scarica il layout dal backend e lo sovrascrive nel DB locale.
-     * Errori di rete vengono ignorati silenziosamente (fallback su dato locale).
-     *
-     * @param utente ID dell'utente.
-     */
     suspend fun syncFromRemote(utente: String) {
         try {
             val response = api.getDashboard(utente = utente)
-            val row = response.data?.firstOrNull() ?: return
+            val row  = response.data?.firstOrNull() ?: return
             val json = (row["layout_json"] as? String) ?: return
-            dao.upsert(DashboardEntity(utente = utente, layoutJson = json))
-        } catch (e: Exception) {
-            // Se il sync fallisce usiamo quello locale — non blocchiamo
-        }
+            // Migra anche il JSON remoto prima di salvarlo
+            val migrated = gson.toJson(parseLayoutJson(json))
+            dao.upsert(DashboardEntity(utente = utente, layoutJson = migrated))
+        } catch (_: Exception) { }
     }
 
-    /**
-     * Carica il layout sul backend. Errori di rete ignorati (dato già in Room).
-     *
-     * @param utente  ID dell'utente.
-     * @param widgets Layout da sincronizzare.
-     */
     suspend fun syncToRemote(utente: String, widgets: List<WidgetConfig>) {
         try {
             val json = gson.toJson(widgets)
             api.saveDashboard(
                 SaveDashboardRequest(
-                    resource = "dashboard",
-                    op = "upsert",
-                    utente = utente,
+                    resource    = "dashboard",
+                    op          = "upsert",
+                    utente      = utente,
                     layout_json = json
                 )
             )
-        } catch (e: Exception) {
-            // Sync fallisce silenziosamente — i dati sono già in Room
+        } catch (_: Exception) { }
+    }
+
+    suspend fun syncAll(utente: String) {
+        syncFromRemote(utente)
+    }
+
+    // ── Parsing con migrazione backward-compat ───────────────────────────────
+
+    /**
+     * Deserializza il JSON del layout gestendo sia il formato nuovo (colSpan/heightStep)
+     * sia il vecchio formato (size: "SMALL"/"WIDE"). Applica valori di default mancanti.
+     */
+    private fun parseLayoutJson(json: String): List<WidgetConfig> {
+        return try {
+            val arr = gson.fromJson(json, JsonArray::class.java) ?: return defaultDashboardLayout()
+            arr.mapNotNull { element ->
+                try {
+                    val obj = element.asJsonObject
+                    migrateWidgetJson(obj)
+                } catch (_: Exception) { null }
+            }.ifEmpty { defaultDashboardLayout() }
+        } catch (_: Exception) {
+            defaultDashboardLayout()
         }
     }
 
-    // ── SYNC completo (usato da syncAll) ─────────────────────────────────
-
     /**
-     * Esegue la sincronizzazione completa (attualmente solo da remoto verso locale).
-     * Chiamato da [SpeseViewModel.syncAll].
-     *
-     * @param utente ID dell'utente.
+     * Converte un singolo JsonObject dal formato vecchio al nuovo.
+     * - Se ha "size"="SMALL" → colSpan=3, heightStep=defaultHeightStep
+     * - Se ha "size"="WIDE"  → colSpan=6, heightStep=defaultHeightStep
+     * - Se ha già "colSpan"  → usa quello, aggiunge heightStep se mancante
      */
-    suspend fun syncAll(utente: String) {
-        syncFromRemote(utente)
+    private fun migrateWidgetJson(obj: JsonObject): WidgetConfig? {
+        // Legge il tipo
+        val typeName = obj.get("type")?.asString ?: return null
+        val type = try { WidgetType.valueOf(typeName) } catch (_: Exception) { return null }
+
+        // Determina colSpan
+        val colSpan: Int = when {
+            obj.has("colSpan") -> obj.get("colSpan").asInt
+            obj.has("size")    -> when (obj.get("size").asString) {
+                "SMALL" -> 3
+                "WIDE"  -> 6
+                else    -> type.defaultColSpan()
+            }
+            else -> type.defaultColSpan()
+        }
+
+        // Determina heightStep
+        val heightStep: WidgetHeightStep = when {
+            obj.has("heightStep") -> try {
+                WidgetHeightStep.valueOf(obj.get("heightStep").asString)
+            } catch (_: Exception) { type.defaultHeightStep() }
+            else -> type.defaultHeightStep()
+        }
+
+        return WidgetConfig(
+            id          = obj.get("id")?.asString       ?: java.util.UUID.randomUUID().toString(),
+            type        = type,
+            colSpan     = colSpan.coerceIn(2, 6),
+            heightStep  = heightStep,
+            position    = obj.get("position")?.asInt    ?: 0,
+            periodo     = try {
+                com.emanuele.gestionespese.data.model.WidgetPeriodo
+                    .valueOf(obj.get("periodo")?.asString ?: "MESE_CORRENTE")
+            } catch (_: Exception) {
+                com.emanuele.gestionespese.data.model.WidgetPeriodo.MESE_CORRENTE
+            },
+            topN        = obj.get("topN")?.asInt        ?: 5,
+            contoFilter = obj.get("contoFilter")?.let {
+                if (it.isJsonNull) null else it.asString
+            }
+        )
     }
 }
