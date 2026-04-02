@@ -22,36 +22,40 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: Auto-increment patch version
+      - name: Compute version
         id: version
         run: |
-          # Legge versione attuale
           CURRENT=$(cat version.txt | tr -d '[:space:]')
-          echo "Versione attuale: $CURRENT"
+          echo "Versione base: $CURRENT"
 
-          # Split major.minor.patch
           MAJOR=$(echo $CURRENT | cut -d. -f1)
           MINOR=$(echo $CURRENT | cut -d. -f2)
           PATCH=$(echo $CURRENT | cut -d. -f3)
 
-          # Incrementa patch
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
-          echo "Nuova versione: $NEW_VERSION"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Su PR: versione beta con numero PR e short SHA, senza modificare version.txt
+            SHORT_SHA=$(echo "${{ github.event.pull_request.head.sha }}" | cut -c1-7)
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            BETA_VERSION="${MAJOR}.${MINOR}.${PATCH}-beta.pr${PR_NUMBER}+${SHORT_SHA}"
+            echo "Versione beta: $BETA_VERSION"
+            echo "version=$BETA_VERSION" >> $GITHUB_OUTPUT
+            echo "is_beta=true"         >> $GITHUB_OUTPUT
+          else
+            # Su push a master: incrementa patch e committa come prima
+            NEW_PATCH=$((PATCH + 1))
+            NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+            echo "Nuova versione: $NEW_VERSION"
+            echo "$NEW_VERSION" > version.txt
 
-          # Aggiorna version.txt
-          echo "$NEW_VERSION" > version.txt
-
-          # Commit e push della nuova versione (solo su push a master, non su PR)
-          if [ "${{ github.event_name }}" = "push" ]; then
             git config user.name  "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add version.txt
             git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
             git push
-          fi
 
-          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "is_beta=false"        >> $GITHUB_OUTPUT
+          fi
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -67,7 +71,7 @@ jobs:
         run: |
           mkdir -p /home/runner/.android
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > /home/runner/.android/debug.keystore
-          echo "✓ Keystore salvato"
+          echo "âœ“ Keystore salvato"
 
       - name: Verify keystore SHA1
         run: |
@@ -94,6 +98,7 @@ jobs:
           mv app/build/outputs/apk/debug/app-debug.apk \
              app/build/outputs/apk/debug/GestioneSpese-v${{ steps.version.outputs.version }}.apk
 
+      # â”€â”€â”€ ARTIFACT (sempre, sia PR che push) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -101,6 +106,46 @@ jobs:
           path: app/build/outputs/apk/debug/GestioneSpese-v${{ steps.version.outputs.version }}.apk
           retention-days: 30
 
+      # â”€â”€â”€ BETA PRE-RELEASE (solo su PR) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      - name: Create Beta Pre-Release (PR only)
+        if: github.event_name == 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: beta-pr${{ github.event.pull_request.number }}
+          name: "ðŸ§ª Beta â€” PR #${{ github.event.pull_request.number }} â€” v${{ steps.version.outputs.version }}"
+          body: |
+            ## ðŸ§ª Build di test â€” PR #${{ github.event.pull_request.number }}
+
+            > âš ï¸ Questa Ã¨ una build **beta** generata automaticamente dalla pull request.
+            > Non Ã¨ una release stabile. Usala solo per testare le modifiche in branch.
+
+            ### ðŸ“¦ Installazione (solo tester)
+            1. Scarica `GestioneSpese-v${{ steps.version.outputs.version }}.apk`
+            2. Abilita **"Installa da fonti sconosciute"** nelle impostazioni Android
+            3. Apri il file e installa
+
+            ### ðŸ”§ Dettagli build
+            | | |
+            |---|---|
+            | **Versione beta** | `v${{ steps.version.outputs.version }}` |
+            | **PR** | [#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }}) |
+            | **Branch** | `${{ github.head_ref }}` |
+            | **Commit** | `${{ github.event.pull_request.head.sha }}` |
+            | **SHA1 keystore** | `DC:56:2D:23:C6:90:A1:37:D3:7C:23:DE:99:85:AF:32:D0:7E:D0:1B` |
+
+            ### ðŸ“ Titolo PR
+            > ${{ github.event.pull_request.title }}
+
+            ---
+            > ðŸ”’ Pre-release â€” visibile solo a chi ha il link diretto o accesso al repo.
+          files: app/build/outputs/apk/debug/GestioneSpese-v${{ steps.version.outputs.version }}.apk
+          draft: false
+          prerelease: true   # â† NON appare come "Latest", non notificato ai follower
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # â”€â”€â”€ RELEASE STABILE (solo su push a master) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Get short SHA
         if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
         id: slug
@@ -122,14 +167,14 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}-${{ steps.slug.outputs.sha7 }}
           name: "Gestione Spese v${{ steps.version.outputs.version }}"
           body: |
-            ## 📱 Gestione Spese v${{ steps.version.outputs.version }}
+            ## ðŸ“± Gestione Spese v${{ steps.version.outputs.version }}
 
-            ### 📦 Installazione
+            ### ðŸ“¦ Installazione
             1. Scarica `GestioneSpese-v${{ steps.version.outputs.version }}.apk`
             2. Abilita **"Installa da fonti sconosciute"** nelle impostazioni Android
             3. Apri il file e installa
 
-            ### 🔧 Dettagli build
+            ### ðŸ”§ Dettagli build
             | | |
             |---|---|
             | **Versione** | v${{ steps.version.outputs.version }} |
@@ -137,14 +182,14 @@ jobs:
             | **Data** | ${{ github.event.head_commit.timestamp }} |
             | **SHA1 keystore** | `DC:56:2D:23:C6:90:A1:37:D3:7C:23:DE:99:85:AF:32:D0:7E:D0:1B` |
 
-            ### 📝 Commit
+            ### ðŸ“ Commit
             > ${{ github.event.head_commit.message }}
 
-            ### 📂 File modificati
+            ### ðŸ“‚ File modificati
             ${{ steps.changes.outputs.files }}
 
             ---
-            > ⚠️ Build di **debug** — non per distribuzione pubblica.
+            > âš ï¸ Build di **debug** â€” non per distribuzione pubblica.
           files: app/build/outputs/apk/debug/GestioneSpese-v${{ steps.version.outputs.version }}.apk
           draft: false
           prerelease: false
@@ -157,9 +202,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: "Latest — v${{ steps.version.outputs.version }}"
+          name: "Latest â€” v${{ steps.version.outputs.version }}"
           body: |
-            Ultima build stabile — **v${{ steps.version.outputs.version }}**
+            Ultima build stabile â€” **v${{ steps.version.outputs.version }}**
             Aggiornato automaticamente ad ogni push su master.
           files: app/build/outputs/apk/debug/GestioneSpese-v${{ steps.version.outputs.version }}.apk
           draft: false
