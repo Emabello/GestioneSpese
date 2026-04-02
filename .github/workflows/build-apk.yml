@@ -71,7 +71,7 @@ jobs:
         run: |
           mkdir -p /home/runner/.android
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > /home/runner/.android/debug.keystore
-          echo "âœ“ Keystore salvato"
+          echo "✓ Keystore salvato"
 
       - name: Verify keystore SHA1
         run: |
@@ -98,7 +98,7 @@ jobs:
           mv app/build/outputs/apk/debug/app-debug.apk \
              app/build/outputs/apk/debug/GestioneSpese-v${{ steps.version.outputs.version }}.apk
 
-      # â”€â”€â”€ ARTIFACT (sempre, sia PR che push) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      # --- ARTIFACT (sempre, sia PR che push) --------------------------------
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -106,25 +106,25 @@ jobs:
           path: app/build/outputs/apk/debug/GestioneSpese-v${{ steps.version.outputs.version }}.apk
           retention-days: 30
 
-      # â”€â”€â”€ BETA PRE-RELEASE (solo su PR) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      # --- BETA PRE-RELEASE (solo su PR) --------------------------------------
       - name: Create Beta Pre-Release (PR only)
         if: github.event_name == 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: beta-pr${{ github.event.pull_request.number }}
-          name: "ðŸ§ª Beta â€” PR #${{ github.event.pull_request.number }} â€” v${{ steps.version.outputs.version }}"
+          name: "🧪 Beta - PR #${{ github.event.pull_request.number }} - v${{ steps.version.outputs.version }}"
           body: |
-            ## ðŸ§ª Build di test â€” PR #${{ github.event.pull_request.number }}
+            ## 🧪 Build di test - PR #${{ github.event.pull_request.number }}
 
-            > âš ï¸ Questa Ã¨ una build **beta** generata automaticamente dalla pull request.
-            > Non Ã¨ una release stabile. Usala solo per testare le modifiche in branch.
+            > ⚠️ Questa e' una build **beta** generata automaticamente dalla pull request.
+            > Non e' una release stabile. Usala solo per testare le modifiche in branch.
 
-            ### ðŸ“¦ Installazione (solo tester)
+            ### 📦 Installazione (solo tester)
             1. Scarica `GestioneSpese-v${{ steps.version.outputs.version }}.apk`
             2. Abilita **"Installa da fonti sconosciute"** nelle impostazioni Android
             3. Apri il file e installa
 
-            ### ðŸ”§ Dettagli build
+            ### 🔧 Dettagli build
             | | |
             |---|---|
             | **Versione beta** | `v${{ steps.version.outputs.version }}` |
@@ -133,19 +133,19 @@ jobs:
             | **Commit** | `${{ github.event.pull_request.head.sha }}` |
             | **SHA1 keystore** | `DC:56:2D:23:C6:90:A1:37:D3:7C:23:DE:99:85:AF:32:D0:7E:D0:1B` |
 
-            ### ðŸ“ Titolo PR
+            ### 📝 Titolo PR
             > ${{ github.event.pull_request.title }}
 
             ---
-            > ðŸ”’ Pre-release â€” visibile solo a chi ha il link diretto o accesso al repo.
+            > 🔒 Pre-release - visibile solo a chi ha il link diretto o accesso al repo.
           files: app/build/outputs/apk/debug/GestioneSpese-v${{ steps.version.outputs.version }}.apk
           draft: false
-          prerelease: true   # â† NON appare come "Latest", non notificato ai follower
+          prerelease: true   # <- NON appare come "Latest", non notificato ai follower
           make_latest: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # â”€â”€â”€ RELEASE STABILE (solo su push a master) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      # --- RELEASE STABILE (solo su push a master) ----------------------------
       - name: Get short SHA
         if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
         id: slug
@@ -167,14 +167,14 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}-${{ steps.slug.outputs.sha7 }}
           name: "Gestione Spese v${{ steps.version.outputs.version }}"
           body: |
-            ## ðŸ“± Gestione Spese v${{ steps.version.outputs.version }}
+            ## 📱 Gestione Spese v${{ steps.version.outputs.version }}
 
-            ### ðŸ“¦ Installazione
+            ### 📦 Installazione
             1. Scarica `GestioneSpese-v${{ steps.version.outputs.version }}.apk`
             2. Abilita **"Installa da fonti sconosciute"** nelle impostazioni Android
             3. Apri il file e installa
 
-            ### ðŸ”§ Dettagli build
+            ### 🔧 Dettagli build
             | | |
             |---|---|
             | **Versione** | v${{ steps.version.outputs.version }} |
@@ -182,14 +182,14 @@ jobs:
             | **Data** | ${{ github.event.head_commit.timestamp }} |
             | **SHA1 keystore** | `DC:56:2D:23:C6:90:A1:37:D3:7C:23:DE:99:85:AF:32:D0:7E:D0:1B` |
 
-            ### ðŸ“ Commit
+            ### 📝 Commit
             > ${{ github.event.head_commit.message }}
 
-            ### ðŸ“‚ File modificati
+            ### 📂 File modificati
             ${{ steps.changes.outputs.files }}
 
             ---
-            > âš ï¸ Build di **debug** â€” non per distribuzione pubblica.
+            > ⚠️ Build di **debug** - non per distribuzione pubblica.
           files: app/build/outputs/apk/debug/GestioneSpese-v${{ steps.version.outputs.version }}.apk
           draft: false
           prerelease: false
@@ -202,9 +202,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: "Latest â€” v${{ steps.version.outputs.version }}"
+          name: "Latest - v${{ steps.version.outputs.version }}"
           body: |
-            Ultima build stabile â€” **v${{ steps.version.outputs.version }}**
+            Ultima build stabile - **v${{ steps.version.outputs.version }}**
             Aggiornato automaticamente ad ogni push su master.
           files: app/build/outputs/apk/debug/GestioneSpese-v${{ steps.version.outputs.version }}.apk
           draft: false
