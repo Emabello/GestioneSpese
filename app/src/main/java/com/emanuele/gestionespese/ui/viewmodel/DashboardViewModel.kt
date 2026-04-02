@@ -115,6 +115,21 @@ class DashboardViewModel(
         saveLayout(updated)
     }
 
+    /**
+     * Cicla il colSpan del widget tra i valori validi (2 → 3 → 4 → 6 → 2 …).
+     */
+    fun toggleSize(id: String) {
+        val updated = _state.value.widgets.map { w ->
+            if (w.id == id) {
+                val currentIdx = VALID_COL_SPANS.indexOf(w.colSpan)
+                val nextIdx = if (currentIdx < 0) 0 else (currentIdx + 1) % VALID_COL_SPANS.size
+                val nextSpan = VALID_COL_SPANS[nextIdx].coerceAtLeast(w.type.minColSpan())
+                w.copy(colSpan = nextSpan)
+            } else w
+        }
+        saveLayout(updated)
+    }
+
     fun updateWidgetConfig(id: String, config: WidgetConfig) {
         saveLayout(_state.value.widgets.map { w -> if (w.id == id) config else w })
     }

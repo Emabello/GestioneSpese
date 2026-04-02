@@ -1,7 +1,7 @@
 /**
  * SaldoMeseWidget.kt
  *
- * Widget della dashboard che mostra il saldo netto del periodo selezionato
+ * Widget della dashboard che mostra il saldo netto del mese selezionato
  * (entrate – uscite). Il valore è colorato in verde se positivo, rosso se negativo.
  */
 package com.emanuele.gestionespese.ui.components.widgets
@@ -31,20 +31,20 @@ import java.util.Locale
 fun SaldoMeseWidget(
     config: WidgetConfig,
     spese: List<SpesaView>,
+    spesePrevMonth: List<SpesaView>,
     modifier: Modifier = Modifier
 ) {
-    val filtered   = remember(spese, config.periodo) { spese.filteredByPeriodo(config.periodo) }
-    val entrate    = remember(filtered) { filtered.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo } }
-    val uscite     = remember(filtered) { filtered.filter { it.isUscita() && !it.isTransfer() }.sumOf { it.importo } }
+    // spese è già filtrato per il mese selezionato
+    val entrate    = remember(spese) { spese.filter { it.isEntrata() && !it.isTransfer() }.sumOf { it.importo } }
+    val uscite     = remember(spese) { spese.filter { it.isUscita() && !it.isTransfer() }.sumOf { it.importo } }
     val saldo      = entrate - uscite
     val isPositive = saldo >= 0
 
     WidgetCard(
-        title     = "Saldo ${config.periodo.label()}",
+        title     = "Saldo mese",
         modifier  = modifier,
         cardColor = if (isPositive) MaterialTheme.incomeContainer else MaterialTheme.expenseContainer
     ) {
-        // S/M/L: saldo principale + segno badge
         Row(
             modifier              = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

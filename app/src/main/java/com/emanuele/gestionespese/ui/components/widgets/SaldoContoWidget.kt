@@ -2,8 +2,7 @@
  * SaldoContoWidget.kt
  *
  * Widget della dashboard che mostra il saldo cumulativo (tutto il tempo) di un
- * conto specifico (o del primo conto disponibile se nessuno è configurato).
- * Mostra anche le uscite e le entrate del conto nel periodo come contesto.
+ * conto specifico. Entrate/uscite sono calcolate sul mese selezionato.
  */
 package com.emanuele.gestionespese.ui.components.widgets
 
@@ -31,31 +30,38 @@ import com.emanuele.gestionespese.ui.theme.incomeContainer
 import com.emanuele.gestionespese.utils.InitialBalanceManager
 import java.util.Locale
 
+/**
+ * @param config    Configurazione del widget.
+ * @param spese     Spese filtrate per il mese selezionato (per entrate/uscite mese).
+ * @param speseAll  Tutte le spese non filtrate (per saldo cumulativo totale).
+ */
 @Composable
 fun SaldoContoWidget(
     config: WidgetConfig,
     spese: List<SpesaView>,
+    speseAll: List<SpesaView>,
     modifier: Modifier = Modifier
 ) {
-    val conto = remember(config.contoFilter, spese) {
+    val conto = remember(config.contoFilter, speseAll) {
         config.contoFilter?.takeIf { it.isNotBlank() }
-            ?: spese.mapNotNull { it.conto }.distinct().firstOrNull()
+            ?: speseAll.mapNotNull { it.conto }.distinct().firstOrNull()
             ?: ""
     }
 
     val context = LocalContext.current
     val initialBalance = remember(conto) { InitialBalanceManager.getBalance(context, conto) }
-    val saldo = remember(spese, conto, initialBalance) { spese.saldoPerConto(conto, initialBalance) }
+    // Saldo cumulativo su TUTTE le spese
+    val saldo = remember(speseAll, conto, initialBalance) { speseAll.saldoPerConto(conto, initialBalance) }
     val isPositive = saldo >= 0
 
-    val speseFiltered    = remember(spese, config.periodo) { spese.filteredByPeriodo(config.periodo) }
-    val entrateContoMese = remember(speseFiltered, conto) {
-        speseFiltered.filter { it.conto == conto && it.isEntrata() }.sumOf { it.importo } +
-        speseFiltered.filter { it.conto_destinazione == conto && it.isTransfer() }.sumOf { it.importo }
+    // Entrate/uscite del mese selezionato (spese già filtrate)
+    val entrateContoMese = remember(spese, conto) {
+        spese.filter { it.conto == conto && it.isEntrata() }.sumOf { it.importo } +
+        spese.filter { it.conto_destinazione == conto && it.isTransfer() }.sumOf { it.importo }
     }
-    val usciteContoMese = remember(speseFiltered, conto) {
-        speseFiltered.filter { it.conto == conto && it.isUscita() }.sumOf { it.importo } +
-        speseFiltered.filter { it.conto == conto && it.isTransfer() }.sumOf { it.importo }
+    val usciteContoMese = remember(spese, conto) {
+        spese.filter { it.conto == conto && it.isUscita() }.sumOf { it.importo } +
+        spese.filter { it.conto == conto && it.isTransfer() }.sumOf { it.importo }
     }
 
     val contoLabel = if (conto.isNotBlank()) conto.substringAfter(" - ", conto) else "Nessun conto"
@@ -89,7 +95,7 @@ fun SaldoContoWidget(
             fontWeight = FontWeight.Bold,
             color      = if (isPositive) Brand else Danger
         )
-        // M+: entrate e uscite del periodo
+        // M+: entrate e uscite del mese selezionato
         if (config.heightStep.ordinal >= WidgetHeightStep.M.ordinal) {
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

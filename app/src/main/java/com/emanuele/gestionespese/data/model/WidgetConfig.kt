@@ -2,8 +2,8 @@
  * WidgetConfig.kt
  *
  * Modelli di configurazione per i widget della dashboard personalizzabile.
- * Definisce i tipi di widget disponibili, le dimensioni e i periodi temporali,
- * oltre al layout default applicato ai nuovi utenti.
+ * Definisce i tipi di widget disponibili, le dimensioni (colSpan / heightStep),
+ * i periodi temporali e il layout default applicato ai nuovi utenti.
  */
 package com.emanuele.gestionespese.data.model
 
@@ -11,40 +11,69 @@ import java.util.UUID
 
 /** Identifica il tipo di contenuto visualizzato dal widget. */
 enum class WidgetType {
-    /** Totale delle uscite nel periodo selezionato. */
     TOTALE_USCITE,
-    /** Totale delle entrate nel periodo selezionato. */
     TOTALE_ENTRATE,
-    /** Saldo (entrate – uscite) del periodo selezionato. */
     SALDO_MESE,
-    /** Grafico a torta delle spese per categoria. */
     GRAFICO_TORTA,
-    /** Lista degli ultimi movimenti registrati. */
     ULTIMI_MOVIMENTI,
-    /** Classifica delle categorie per importo speso. */
     TOP_CATEGORIE,
-    /** Saldo di uno specifico conto (tutti i tempi). */
     SALDO_CONTO,
-    /** Grafico a barre dell'andamento mensile (ultimi 6 mesi). */
     ANDAMENTO_MENSILE
 }
 
-/** Dimensione del widget nella griglia della dashboard (2 colonne). */
+/**
+ * Dimensione legacy del widget (usata solo per migrazione JSON vecchi).
+ * Il sistema attuale usa [WidgetConfig.colSpan].
+ */
 enum class WidgetSize {
-    /** Occupa mezza larghezza (1 colonna su 2). */
     SMALL,
-    /** Occupa la larghezza intera (2 colonne). */
     WIDE
+}
+
+/** Step di altezza del widget: controlla quanti dettagli mostrare. */
+enum class WidgetHeightStep {
+    /** Solo metrica principale. */
+    S,
+    /** Metrica + elemento secondario (confronto %, entrate/uscite). */
+    M,
+    /** Metrica + dettagli completi (breakdown categorie, ecc.). */
+    L
 }
 
 /** Intervallo temporale su cui il widget calcola i dati. */
 enum class WidgetPeriodo {
-    /** Dal primo all'ultimo giorno del mese corrente. */
     MESE_CORRENTE,
-    /** Ultimi 30 giorni a partire da oggi. */
     ULTIMI_30_GIORNI,
-    /** Dal primo gennaio al giorno corrente dell'anno. */
     ANNO_CORRENTE
+}
+
+/** Valori validi per colSpan nella griglia a 6 colonne. */
+val VALID_COL_SPANS = listOf(2, 3, 4, 6)
+
+/** Numero di colonne di default per il tipo di widget. */
+fun WidgetType.defaultColSpan(): Int = when (this) {
+    WidgetType.TOTALE_USCITE,
+    WidgetType.TOTALE_ENTRATE,
+    WidgetType.SALDO_CONTO -> 3
+    else -> 6
+}
+
+/** Numero minimo di colonne consentito per il tipo di widget. */
+fun WidgetType.minColSpan(): Int = when (this) {
+    WidgetType.GRAFICO_TORTA,
+    WidgetType.ULTIMI_MOVIMENTI,
+    WidgetType.TOP_CATEGORIE,
+    WidgetType.ANDAMENTO_MENSILE -> 4
+    else -> 2
+}
+
+/** HeightStep di default per il tipo di widget. */
+fun WidgetType.defaultHeightStep(): WidgetHeightStep = when (this) {
+    WidgetType.GRAFICO_TORTA,
+    WidgetType.ULTIMI_MOVIMENTI,
+    WidgetType.TOP_CATEGORIE,
+    WidgetType.ANDAMENTO_MENSILE -> WidgetHeightStep.M
+    else -> WidgetHeightStep.S
 }
 
 /**
@@ -52,18 +81,19 @@ enum class WidgetPeriodo {
  *
  * @property id          Identificativo UUID univoco del widget.
  * @property type        Tipo di contenuto ([WidgetType]).
- * @property size        Dimensione nella griglia ([WidgetSize]).
+ * @property colSpan     Numero di colonne occupate nella griglia a 6 (2, 3, 4 o 6).
+ * @property heightStep  Livello di dettaglio verticale ([WidgetHeightStep]).
  * @property position    Ordine di visualizzazione (0 = primo in alto).
  * @property periodo     Intervallo temporale per i calcoli ([WidgetPeriodo]).
  * @property topN        Numero massimo di elementi per [WidgetType.TOP_CATEGORIE]
  *                       e [WidgetType.ULTIMI_MOVIMENTI].
  * @property contoFilter Filtro per conto specifico (usato da [WidgetType.SALDO_CONTO]).
- *                       `null` = mostra tutti i conti / usa il primo disponibile.
  */
 data class WidgetConfig(
     val id: String = UUID.randomUUID().toString(),
     val type: WidgetType,
-    val size: WidgetSize = WidgetSize.WIDE,
+    val colSpan: Int = type.defaultColSpan(),
+    val heightStep: WidgetHeightStep = type.defaultHeightStep(),
     val position: Int = 0,
     val periodo: WidgetPeriodo = WidgetPeriodo.MESE_CORRENTE,
     val topN: Int = 5,
@@ -73,14 +103,12 @@ data class WidgetConfig(
 /**
  * Layout di default applicato quando l'utente non ha ancora personalizzato
  * la propria dashboard.
- *
- * @return Lista ordinata di [WidgetConfig] con i widget principali.
  */
 fun defaultDashboardLayout(): List<WidgetConfig> = listOf(
-    WidgetConfig(type = WidgetType.SALDO_MESE,         size = WidgetSize.WIDE,  position = 0),
-    WidgetConfig(type = WidgetType.TOTALE_USCITE,      size = WidgetSize.SMALL, position = 1),
-    WidgetConfig(type = WidgetType.TOTALE_ENTRATE,     size = WidgetSize.SMALL, position = 2),
-    WidgetConfig(type = WidgetType.GRAFICO_TORTA,      size = WidgetSize.WIDE,  position = 3),
-    WidgetConfig(type = WidgetType.TOP_CATEGORIE,      size = WidgetSize.WIDE,  position = 4),
-    WidgetConfig(type = WidgetType.ULTIMI_MOVIMENTI,   size = WidgetSize.WIDE,  position = 5)
+    WidgetConfig(type = WidgetType.SALDO_MESE,         colSpan = 6, position = 0),
+    WidgetConfig(type = WidgetType.TOTALE_USCITE,      colSpan = 3, position = 1),
+    WidgetConfig(type = WidgetType.TOTALE_ENTRATE,     colSpan = 3, position = 2),
+    WidgetConfig(type = WidgetType.GRAFICO_TORTA,      colSpan = 6, position = 3),
+    WidgetConfig(type = WidgetType.TOP_CATEGORIE,      colSpan = 6, position = 4),
+    WidgetConfig(type = WidgetType.ULTIMI_MOVIMENTI,   colSpan = 6, position = 5)
 )

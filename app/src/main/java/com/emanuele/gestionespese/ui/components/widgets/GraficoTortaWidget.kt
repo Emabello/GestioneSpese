@@ -39,9 +39,9 @@ fun GraficoTortaWidget(
     spese: List<SpesaView>,
     modifier: Modifier = Modifier
 ) {
-    val slices = remember(spese, config.periodo) {
-        spese.filteredByPeriodo(config.periodo)
-            .filter { it.isUscita() }
+    // spese è già filtrato per il mese selezionato
+    val slices = remember(spese) {
+        spese.filter { it.isUscita() }
             .groupBy { it.categoria?.trim() ?: "Altro" }
             .mapValues { (_, v) -> v.sumOf { it.importo } }
             .entries.sortedByDescending { it.value }
